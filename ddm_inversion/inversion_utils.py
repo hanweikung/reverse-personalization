@@ -1,6 +1,9 @@
 import torch
 import os
 from tqdm import tqdm
+from typing import Any, Callable, Dict, List, Optional, Union
+from diffusers.image_processor import PipelineImageInput
+from diffusers.models import ImageProjection
 
 def load_real_image(folder = "data/", img_name = None, idx = 0, img_size=512, device='cuda'):
     from ddm_inversion.utils import pil_to_tensor
@@ -103,7 +106,11 @@ def inversion_forward_process(model, x0,
                             prog_bar = False,
                             prompt = "",
                             cfg_scale = 3.5,
-                            num_inference_steps=50, eps = None):
+                            num_inference_steps=50,
+                            steps = None,
+                            ip_adapter_image: Optional[PipelineImageInput] = None,
+                            ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
+                            ):
 
     if not prompt=="":
         text_embeddings = encode_text(model, prompt)
@@ -128,6 +135,23 @@ def inversion_forward_process(model, x0,
     # op = tqdm(reversed(timesteps)) if prog_bar else reversed(timesteps)
     op = tqdm(timesteps) if prog_bar else timesteps
 
+    if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+        image_embeds = prepare_ip_adapter_image_embeds(
+            model=model,
+            ip_adapter_image=ip_adapter_image,
+            ip_adapter_image_embeds=ip_adapter_image_embeds,
+            device=model.device,
+            num_images_per_prompt=1,
+            do_classifier_free_guidance=prompt!="",
+        )
+
+    # 6.1 Add image embeds for IP-Adapter
+    added_cond_kwargs = (
+        {"image_embeds": image_embeds}
+        if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
+        else None
+    )
+
     for t in op:
         # idx = t_to_idx[int(t)]
         idx = num_inference_steps-t_to_idx[int(t)]-1
@@ -137,9 +161,9 @@ def inversion_forward_process(model, x0,
             # xt = xts_cycle[idx+1][None]
                     
         with torch.no_grad():
-            out = model.unet.forward(xt, timestep =  t, encoder_hidden_states = uncond_embedding)
+            out = model.unet.forward(xt, timestep =  t, encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_cond_kwargs)
             if not prompt=="":
-                cond_out = model.unet.forward(xt, timestep=t, encoder_hidden_states = text_embeddings)
+                cond_out = model.unet.forward(xt, timestep=t, encoder_hidden_states = text_embeddings, added_cond_kwargs=added_cond_kwargs)
 
         if not prompt=="":
             ## classifier free guidance
@@ -217,7 +241,10 @@ def inversion_reverse_process(model,
                     prog_bar = False,
                     zs = None,
                     controller=None,
-                    asyrp = False):
+                    asyrp = False,
+                    ip_adapter_image: Optional[PipelineImageInput] = None,
+                    ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
+                    ):
 
     batch_size = len(prompts)
 
@@ -236,18 +263,34 @@ def inversion_reverse_process(model,
 
     t_to_idx = {int(v):k for k,v in enumerate(timesteps[-zs.shape[0]:])}
 
+    if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+        image_embeds = prepare_ip_adapter_image_embeds(
+            model=model,
+            ip_adapter_image=ip_adapter_image,
+            ip_adapter_image_embeds=ip_adapter_image_embeds,
+            device=model.device,
+            num_images_per_prompt=1,
+            do_classifier_free_guidance=prompts!="",
+        )
+    # 6.1 Add image embeds for IP-Adapter
+    added_cond_kwargs = (
+        {"image_embeds": image_embeds}
+        if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
+        else None
+    )
+
     for t in op:
         idx = model.scheduler.num_inference_steps-t_to_idx[int(t)]-(model.scheduler.num_inference_steps-zs.shape[0]+1)    
         ## Unconditional embedding
         with torch.no_grad():
             uncond_out = model.unet.forward(xt, timestep =  t, 
-                                            encoder_hidden_states = uncond_embedding)
+                                            encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_cond_kwargs)
 
             ## Conditional embedding  
-        if prompts:  
+        if prompts:
             with torch.no_grad():
                 cond_out = model.unet.forward(xt, timestep =  t, 
-                                                encoder_hidden_states = text_embeddings)
+                                                encoder_hidden_states = text_embeddings, added_cond_kwargs=added_cond_kwargs)
             
         
         z = zs[idx] if not zs is None else None
@@ -264,3 +307,47 @@ def inversion_reverse_process(model,
     return xt, zs
 
 
+def prepare_ip_adapter_image_embeds(
+    model, ip_adapter_image, ip_adapter_image_embeds, device, num_images_per_prompt, do_classifier_free_guidance
+):
+    image_embeds = []
+    if do_classifier_free_guidance:
+        negative_image_embeds = []
+    if ip_adapter_image_embeds is None:
+        if not isinstance(ip_adapter_image, list):
+            ip_adapter_image = [ip_adapter_image]
+
+        if len(ip_adapter_image) != len(model.unet.encoder_hid_proj.image_projection_layers):
+            raise ValueError(
+                f"`ip_adapter_image` must have same length as the number of IP Adapters. Got {len(ip_adapter_image)} images and {len(model.unet.encoder_hid_proj.image_projection_layers)} IP Adapters."
+            )
+
+        for single_ip_adapter_image, image_proj_layer in zip(
+            ip_adapter_image, model.unet.encoder_hid_proj.image_projection_layers
+        ):
+            output_hidden_state = not isinstance(image_proj_layer, ImageProjection)
+            single_image_embeds, single_negative_image_embeds = model.encode_image(
+                single_ip_adapter_image, device, 1, output_hidden_state
+            )
+
+            image_embeds.append(single_image_embeds[None, :])
+            if do_classifier_free_guidance:
+                negative_image_embeds.append(single_negative_image_embeds[None, :])
+    else:
+        for single_image_embeds in ip_adapter_image_embeds:
+            if do_classifier_free_guidance:
+                single_negative_image_embeds, single_image_embeds = single_image_embeds.chunk(2)
+                negative_image_embeds.append(single_negative_image_embeds)
+            image_embeds.append(single_image_embeds)
+
+    ip_adapter_image_embeds = []
+    for i, single_image_embeds in enumerate(image_embeds):
+        single_image_embeds = torch.cat([single_image_embeds] * num_images_per_prompt, dim=0)
+        if do_classifier_free_guidance:
+            single_negative_image_embeds = torch.cat([negative_image_embeds[i]] * num_images_per_prompt, dim=0)
+            single_image_embeds = torch.cat([single_negative_image_embeds, single_image_embeds], dim=0)
+
+        single_image_embeds = single_image_embeds.to(device=device)
+        ip_adapter_image_embeds.append(single_image_embeds)
+
+    return ip_adapter_image_embeds

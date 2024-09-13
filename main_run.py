@@ -10,8 +10,32 @@ from ddm_inversion.utils import image_grid,dataset_from_yaml
 from torch import autocast, inference_mode
 from ddm_inversion.ddim_inversion import ddim_inversion
 
+from insightface.app import FaceAnalysis
+import cv2
+import torch
+from diffusers.utils import load_image
+import numpy as np
+
 import calendar
 import time
+
+def extract_id_embeddings():
+    image = load_image("example_images/09787.png")
+    ref_images_embeds = []
+    app = FaceAnalysis(
+        name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    app.prepare(ctx_id=0, det_size=(640, 640))
+    image = cv2.cvtColor(np.asarray(image), cv2.COLOR_BGR2RGB)
+    faces = app.get(image)
+    image = torch.from_numpy(faces[0].normed_embedding)
+    ref_images_embeds.append(image.unsqueeze(0))
+    ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
+    neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
+    id_embeds = torch.cat([neg_ref_images_embeds, ref_images_embeds]).to(
+        dtype=torch.float32, device="cuda"
+    )
+    return id_embeds
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -31,7 +55,7 @@ if __name__ == "__main__":
 
     # create scheduler
     # load diffusion model
-    model_id = "CompVis/stable-diffusion-v1-4"
+    model_id = "runwayml/stable-diffusion-v1-5"
     # model_id = "stable_diff_local" # load local save of model (for internet problems)
 
     device = f"cuda:{args.device_num}"
@@ -47,6 +71,15 @@ if __name__ == "__main__":
 
     # load/reload model:
     ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
+    ldm_stable.load_ip_adapter(
+        "h94/IP-Adapter-FaceID",
+        subfolder=None,
+        weight_name="ip-adapter-faceid_sd15.bin",
+        image_encoder_folder=None,
+    )
+    ldm_stable.set_ip_adapter_scale(0.6)
+
+    id_embeds = extract_id_embeddings()
 
     for i in range(len(full_data)):
         current_image_data = full_data[i]
@@ -55,6 +88,9 @@ if __name__ == "__main__":
         image_folder = image_path.split('/')[1] # after '.'
         prompt_src = current_image_data.get('source_prompt', "") # default empty string
         prompt_tar_list = current_image_data['target_prompts']
+
+        prompt_src = ""
+        prompt_tar_list = [""]
 
         if args.mode=="p2pddim" or args.mode=="ddim":
             scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
@@ -76,7 +112,7 @@ if __name__ == "__main__":
         if args.mode=="p2pddim" or args.mode=="ddim":
             wT = ddim_inversion(ldm_stable, w0, prompt_src, cfg_scale_src)
         else:
-            wt, zs, wts = inversion_forward_process(ldm_stable, w0, etas=eta, prompt=prompt_src, cfg_scale=cfg_scale_src, prog_bar=True, num_inference_steps=args.num_diffusion_steps)
+            wt, zs, wts = inversion_forward_process(ldm_stable, w0, etas=eta, prompt=prompt_src, cfg_scale=cfg_scale_src, prog_bar=True, num_inference_steps=args.num_diffusion_steps, ip_adapter_image_embeds=[id_embeds])
 
         # iterate over decoder prompts
         for k in range(len(prompt_tar_list)):
@@ -93,7 +129,7 @@ if __name__ == "__main__":
                         # reverse process (via Zs and wT)
                         controller = AttentionStore()
                         register_attention_control(ldm_stable, controller)
-                        w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller)
+                        w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":
                         # inversion with attention replace
@@ -106,7 +142,7 @@ if __name__ == "__main__":
                             controller = AttentionRefine(prompts, args.num_diffusion_steps, cross_replace_steps=args.xa, self_replace_steps=args.sa, model=ldm_stable)
 
                         register_attention_control(ldm_stable, controller)
-                        w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=prompts, cfg_scales=cfg_scale_list, prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller)
+                        w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=prompts, cfg_scales=cfg_scale_list, prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
                         w0 = w0[1].unsqueeze(0)
 
                     elif args.mode=="p2pddim" or args.mode=="ddim":
