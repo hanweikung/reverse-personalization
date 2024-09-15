@@ -144,13 +144,11 @@ def inversion_forward_process(model, x0,
             num_images_per_prompt=1,
             do_classifier_free_guidance=prompt!="",
         )
-
-    # 6.1 Add image embeds for IP-Adapter
-    added_cond_kwargs = (
-        {"image_embeds": image_embeds}
-        if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
-        else None
-    )
+        added_uncond_kwargs = {"image_embeds": [image_embeds[0][:1, :]]}
+        if prompt != "":
+            added_cond_kwargs = {"image_embeds": [image_embeds[0][1:, :]]}
+    else:
+        added_uncond_kwargs = None
 
     for t in op:
         # idx = t_to_idx[int(t)]
@@ -161,7 +159,7 @@ def inversion_forward_process(model, x0,
             # xt = xts_cycle[idx+1][None]
                     
         with torch.no_grad():
-            out = model.unet.forward(xt, timestep =  t, encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_cond_kwargs)
+            out = model.unet.forward(xt, timestep =  t, encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_uncond_kwargs)
             if not prompt=="":
                 cond_out = model.unet.forward(xt, timestep=t, encoder_hidden_states = text_embeddings, added_cond_kwargs=added_cond_kwargs)
 
@@ -270,23 +268,22 @@ def inversion_reverse_process(model,
             ip_adapter_image_embeds=ip_adapter_image_embeds,
             device=model.device,
             num_images_per_prompt=1,
-            do_classifier_free_guidance=prompts!="",
+            do_classifier_free_guidance=prompts!=None,
         )
-    # 6.1 Add image embeds for IP-Adapter
-    added_cond_kwargs = (
-        {"image_embeds": image_embeds}
-        if (ip_adapter_image is not None or ip_adapter_image_embeds is not None)
-        else None
-    )
+        added_uncond_kwargs = {"image_embeds": [image_embeds[0][:1, :]]}
+        if prompts:
+            added_cond_kwargs = {"image_embeds": [image_embeds[0][1:, :]]}
+    else:
+        added_uncond_kwargs = None
 
     for t in op:
         idx = model.scheduler.num_inference_steps-t_to_idx[int(t)]-(model.scheduler.num_inference_steps-zs.shape[0]+1)    
         ## Unconditional embedding
         with torch.no_grad():
             uncond_out = model.unet.forward(xt, timestep =  t, 
-                                            encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_cond_kwargs)
+                                            encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_uncond_kwargs)
 
-            ## Conditional embedding  
+        ## Conditional embedding
         if prompts:
             with torch.no_grad():
                 cond_out = model.unet.forward(xt, timestep =  t, 
