@@ -78,7 +78,6 @@ if __name__ == "__main__":
         image_encoder_folder=None,
     )
     ldm_stable.set_ip_adapter_scale(0.6)
-
     id_embeds = extract_id_embeddings()
 
     for i in range(len(full_data)):
@@ -128,7 +127,9 @@ if __name__ == "__main__":
                     if args.mode=="our_inv":
                         # reverse process (via Zs and wT)
                         controller = AttentionStore()
-                        register_attention_control(ldm_stable, controller)
+                        controller = None
+                        # register_attention_control(ldm_stable, controller)
+
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":
