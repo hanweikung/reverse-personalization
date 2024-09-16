@@ -3,7 +3,7 @@ from diffusers import StableDiffusionPipeline
 from diffusers import DDIMScheduler
 import os
 from prompt_to_prompt.ptp_classes import AttentionStore, AttentionReplace, AttentionRefine, EmptyControl,load_512
-from prompt_to_prompt.ptp_utils import register_attention_control, text2image_ldm_stable, view_images
+from prompt_to_prompt.ptp_utils import register_attention_control, text2image_ldm_stable, view_images, load_ip_adapter, set_ip_adapter_scale
 from ddm_inversion.inversion_utils import  inversion_forward_process, inversion_reverse_process
 from ddm_inversion.utils import image_grid,dataset_from_yaml
 
@@ -71,13 +71,7 @@ if __name__ == "__main__":
 
     # load/reload model:
     ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
-    ldm_stable.load_ip_adapter(
-        "h94/IP-Adapter-FaceID",
-        subfolder=None,
-        weight_name="ip-adapter-faceid_sd15.bin",
-        image_encoder_folder=None,
-    )
-    ldm_stable.set_ip_adapter_scale(0.6)
+
     id_embeds = extract_id_embeddings()
 
     for i in range(len(full_data)):
@@ -129,6 +123,14 @@ if __name__ == "__main__":
                         controller = AttentionStore()
                         controller = None
                         # register_attention_control(ldm_stable, controller)
+                        load_ip_adapter(
+                            ldm_stable,
+                            "h94/IP-Adapter-FaceID",
+                            subfolder=None,
+                            weight_name="ip-adapter-faceid_sd15.bin",
+                            image_encoder_folder=None,
+                        )
+                        set_ip_adapter_scale(ldm_stable, 1.0)
 
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
