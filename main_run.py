@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # create scheduler
     # load diffusion model
     model_id = "runwayml/stable-diffusion-v1-5"
-    # model_id = "stable_diff_local" # load local save of model (for internet problems)
+    model_id = "/data/han-wei/models/stable-diffusion-v1-5" # load local save of model (for internet problems)
 
     device = f"cuda:{args.device_num}"
 
@@ -121,7 +121,6 @@ if __name__ == "__main__":
                     if args.mode=="our_inv":
                         # reverse process (via Zs and wT)
                         controller = AttentionStore()
-                        controller = None
                         # register_attention_control(ldm_stable, controller)
                         load_ip_adapter(
                             ldm_stable,
@@ -129,9 +128,9 @@ if __name__ == "__main__":
                             subfolder=None,
                             weight_name="ip-adapter-faceid_sd15.bin",
                             image_encoder_folder=None,
+                            controller=controller,
                         )
-                        set_ip_adapter_scale(ldm_stable, 1.0)
-
+                        set_ip_adapter_scale(ldm_stable, -0.2)
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":

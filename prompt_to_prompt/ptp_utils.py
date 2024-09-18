@@ -331,6 +331,10 @@ class AttnProcessor:
     r"""
     Default processor for performing attention-related computations.
     """
+    def __init__(self, controller, place_in_unet):
+        super().__init__()
+        self.controller = controller
+        self.place_in_unet = place_in_unet
 
     def __call__(
         self,
@@ -367,6 +371,7 @@ class AttnProcessor:
 
         query = attn.to_q(hidden_states)
 
+        is_cross = encoder_hidden_states is not None
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:
@@ -380,6 +385,11 @@ class AttnProcessor:
         value = attn.head_to_batch_dim(value)
 
         attention_probs = attn.get_attention_scores(query, key, attention_mask)
+
+        # one line change
+        if self.controller is not None:
+            self.controller(attn=attention_probs, is_cross=is_cross, place_in_unet=self.place_in_unet)
+
         hidden_states = torch.bmm(attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
@@ -414,7 +424,7 @@ class IPAdapterAttnProcessor(nn.Module):
             the weight scale of image prompt.
     """
 
-    def __init__(self, hidden_size, cross_attention_dim=None, num_tokens=(4,), scale=1.0):
+    def __init__(self, hidden_size, cross_attention_dim=None, num_tokens=(4,), scale=1.0, controller=None, place_in_unet=None):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -436,6 +446,8 @@ class IPAdapterAttnProcessor(nn.Module):
         self.to_v_ip = nn.ModuleList(
             [nn.Linear(cross_attention_dim, hidden_size, bias=False) for _ in range(len(num_tokens))]
         )
+        self.controller = controller
+        self.place_in_unet = place_in_unet
 
     def __call__(
         self,
@@ -484,6 +496,7 @@ class IPAdapterAttnProcessor(nn.Module):
 
         query = attn.to_q(hidden_states)
 
+        is_cross = encoder_hidden_states is not None
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:
@@ -497,6 +510,11 @@ class IPAdapterAttnProcessor(nn.Module):
         value = attn.head_to_batch_dim(value)
 
         attention_probs = attn.get_attention_scores(query, key, attention_mask)
+
+        # one line change
+        if self.controller is not None:
+            self.controller(attn=attention_probs, is_cross=is_cross, place_in_unet=self.place_in_unet)
+
         hidden_states = torch.bmm(attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
@@ -603,6 +621,7 @@ def load_ip_adapter(
     subfolder: Union[str, List[str]],
     weight_name: Union[str, List[str]],
     image_encoder_folder: Optional[str] = "image_encoder",
+    controller = None,
     **kwargs,
 ):
     """
@@ -773,22 +792,23 @@ def load_ip_adapter(
 
     # load ip-adapter into unet
     unet = getattr(model, model.unet_name) if not hasattr(model, "unet") else model.unet
-    unet = _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=low_cpu_mem_usage)
+    unet = _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=low_cpu_mem_usage, controller=controller)
 
-    extra_loras = unet._load_ip_adapter_loras(state_dicts)
-    if extra_loras != {}:
-        if not USE_PEFT_BACKEND:
-            logger.warning("PEFT backend is required to load these weights.")
-        else:
-            # apply the IP Adapter Face ID LoRA weights
-            peft_config = getattr(unet, "peft_config", {})
-            for k, lora in extra_loras.items():
-                if f"faceid_{k}" not in peft_config:
-                    model.load_lora_weights(lora, adapter_name=f"faceid_{k}")
-                    model.set_adapters([f"faceid_{k}"], adapter_weights=[1.0])
+    # * Disable this code snippet because the model does not generate images that match the provided text prompt when PEFT is used.
+    # extra_loras = unet._load_ip_adapter_loras(state_dicts)
+    # if extra_loras != {}:
+    #     if not USE_PEFT_BACKEND:
+    #         logger.warning("PEFT backend is required to load these weights.")
+    #     else:
+    #         # apply the IP Adapter Face ID LoRA weights
+    #         peft_config = getattr(unet, "peft_config", {})
+    #         for k, lora in extra_loras.items():
+    #             if f"faceid_{k}" not in peft_config:
+    #                 model.load_lora_weights(lora, adapter_name=f"faceid_{k}")
+    #                 model.set_adapters([f"faceid_{k}"], adapter_weights=[1.0])
 
 
-def _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=False):
+def _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=False, controller = None):
     if not isinstance(state_dicts, list):
         state_dicts = [state_dicts]
 
@@ -804,7 +824,7 @@ def _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=False):
     # because `IPAdapterPlusImageProjection` also has `attn_processors`.
     unet.encoder_hid_proj = None
 
-    attn_procs = _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=low_cpu_mem_usage)
+    attn_procs = _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=low_cpu_mem_usage, controller=controller)
     unet.set_attn_processor(attn_procs)
 
     # convert IP-Adapter Image Projection layers to diffusers
@@ -823,7 +843,7 @@ def _load_ip_adapter_weights(unet, state_dicts, low_cpu_mem_usage=False):
     return unet
 
 
-def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=False):
+def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=False, controller = None):
     if low_cpu_mem_usage:
         if is_accelerate_available():
             from accelerate import init_empty_weights
@@ -844,6 +864,7 @@ def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=F
         )
 
     # set ip-adapter cross-attention processors & load state_dict
+    cross_att_count = 0
     attn_procs = {}
     key_id = 1
     init_context = init_empty_weights if low_cpu_mem_usage else nullcontext
@@ -851,16 +872,20 @@ def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=F
         cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
         if name.startswith("mid_block"):
             hidden_size = unet.config.block_out_channels[-1]
+            place_in_unet = "mid"
         elif name.startswith("up_blocks"):
             block_id = int(name[len("up_blocks.")])
             hidden_size = list(reversed(unet.config.block_out_channels))[block_id]
+            place_in_unet = "up"
         elif name.startswith("down_blocks"):
             block_id = int(name[len("down_blocks.")])
             hidden_size = unet.config.block_out_channels[block_id]
+            place_in_unet = "down"
 
+        cross_att_count += 1
         if cross_attention_dim is None or "motion_modules" in name:
             attn_processor_class = AttnProcessor
-            attn_procs[name] = attn_processor_class()
+            attn_procs[name] = attn_processor_class(controller=controller, place_in_unet=place_in_unet)
 
         else:
             attn_processor_class = IPAdapterAttnProcessor
@@ -888,6 +913,8 @@ def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=F
                     cross_attention_dim=cross_attention_dim,
                     scale=1.0,
                     num_tokens=num_image_text_embeds,
+                    controller=controller,
+                    place_in_unet=place_in_unet,
                 )
 
             value_dict = {}
@@ -904,6 +931,8 @@ def _convert_ip_adapter_attn_to_diffusers(unet, state_dicts, low_cpu_mem_usage=F
 
             key_id += 2
 
+    if controller is not None:
+        controller.num_att_layers = cross_att_count
     return attn_procs
 
 
