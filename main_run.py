@@ -19,8 +19,8 @@ import numpy as np
 import calendar
 import time
 
-def extract_id_embeddings():
-    image = load_image("example_images/09787.png")
+def extract_id_embeddings(image_path):
+    image = load_image(image_path)
     ref_images_embeds = []
     app = FaceAnalysis(
         name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -73,8 +73,6 @@ if __name__ == "__main__":
     # load/reload model:
     ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
 
-    id_embeds = extract_id_embeddings()
-
     for i in range(len(full_data)):
         current_image_data = full_data[i]
         image_path = current_image_data['init_img']
@@ -85,6 +83,8 @@ if __name__ == "__main__":
 
         prompt_src = ""
         prompt_tar_list = [""]
+
+        id_embeds = extract_id_embeddings(image_path)
 
         if args.mode=="p2pddim" or args.mode=="ddim":
             scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
