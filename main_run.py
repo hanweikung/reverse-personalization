@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip",  type=int, default=36)
     parser.add_argument("--xa", type=float, default=0.6)
     parser.add_argument("--sa", type=float, default=0.2)
+    parser.add_argument("--anon_deg",  type=float, default="0.25", help="The degree of anonymization determines how much the anonymized face differs from the original.")
     
     args = parser.parse_args()
     full_data = dataset_from_yaml(args.dataset_yaml)
@@ -130,7 +131,7 @@ if __name__ == "__main__":
                             image_encoder_folder=None,
                             controller=controller,
                         )
-                        set_ip_adapter_scale(ldm_stable, -0.2)
+                        set_ip_adapter_scale(ldm_stable, -args.anon_deg)
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":
@@ -179,7 +180,7 @@ if __name__ == "__main__":
                     # same output
                     current_GMT = time.gmtime()
                     time_stamp_name = calendar.timegm(current_GMT)
-                    image_name_png = f'cfg_d_{cfg_scale_tar}_' + f'skip_{skip}_{time_stamp_name}' + ".png"
+                    image_name_png = f'cfg_d_{cfg_scale_tar}_' + f'skip_{skip}_' + f'anon_deg_{args.anon_deg}_{time_stamp_name}' + ".png"
 
                     save_full_path = os.path.join(save_path, image_name_png)
                     img.save(save_full_path)
