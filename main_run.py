@@ -20,7 +20,7 @@ import numpy as np
 import calendar
 import time
 
-def extract_id_embeddings(image_path):
+def extract_id_embeddings(image_path, id_emb_scale):
     image = load_image(image_path)
     ref_images_embeds = []
     app = FaceAnalysis(
@@ -30,6 +30,7 @@ def extract_id_embeddings(image_path):
     image = cv2.cvtColor(np.asarray(image), cv2.COLOR_BGR2RGB)
     faces = app.get(image)
     image = torch.from_numpy(faces[0].normed_embedding)
+    image = image * id_emb_scale
     ref_images_embeds.append(image.unsqueeze(0))
     ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
     neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
@@ -50,7 +51,21 @@ if __name__ == "__main__":
     parser.add_argument("--skip",  type=int, default=36)
     parser.add_argument("--xa", type=float, default=0.6)
     parser.add_argument("--sa", type=float, default=0.2)
-    parser.add_argument("--anon_deg",  type=float, default="0.25", help="The degree of anonymization determines how much the anonymized face differs from the original.")
+    parser.add_argument(
+        "--ip_adapter_scale",
+        type=float,
+        default="1.0",
+        help=(
+            "controls the amount of text or image conditioning to apply to the model."
+            "A value of 1.0 means the model is only conditioned on the image prompt."
+        )
+    )
+    parser.add_argument(
+        "--id_emb_scale",
+        type=float,
+        default=1.0,
+        help="Scale for the identity embedding. The default value is 1.0.",
+    )
     
     args = parser.parse_args()
     full_data = dataset_from_yaml(args.dataset_yaml)
@@ -85,7 +100,7 @@ if __name__ == "__main__":
         prompt_src = ""
         prompt_tar_list = [""]
 
-        id_embeds = extract_id_embeddings(image_path)
+        id_embeds = extract_id_embeddings(image_path, args.id_emb_scale)
 
         if args.mode=="p2pddim" or args.mode=="ddim":
             scheduler = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", clip_sample=False, set_alpha_to_one=False)
@@ -132,7 +147,7 @@ if __name__ == "__main__":
                             image_encoder_folder=None,
                             controller=controller,
                         )
-                        set_ip_adapter_scale(ldm_stable, -args.anon_deg)
+                        set_ip_adapter_scale(ldm_stable, args.ip_adapter_scale)
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":
@@ -181,7 +196,7 @@ if __name__ == "__main__":
                     # same output
                     current_GMT = time.gmtime()
                     time_stamp_name = calendar.timegm(current_GMT)
-                    image_name_png = f'cfg_d_{cfg_scale_tar}_' + f'skip_{skip}_' + f'anon_deg_{args.anon_deg}_{time_stamp_name}' + ".png"
+                    image_name_png = f'cfg_d_{cfg_scale_tar}_' + f'skip_{skip}_' + f'id_{args.id_emb_scale}' + ".png"
 
                     save_full_path = os.path.join(save_path, image_name_png)
-                    img.save(save_full_path)
+                    img.save(image_name_png)
