@@ -64,7 +64,12 @@ if __name__ == "__main__":
         "--id_emb_scale",
         type=float,
         default=1.0,
-        help="Scale for the identity embedding. The default value is 1.0.",
+        help="scale for the identity embedding. The default value is 1.0.",
+    )
+    parser.add_argument(
+        "--shift_negatives",
+        action="store_true",
+        help="negative id_emb_scale value will be shifted to become positive in the output filename when the flag is set to True",
     )
     
     args = parser.parse_args()
@@ -92,8 +97,6 @@ if __name__ == "__main__":
     for i in range(len(full_data)):
         current_image_data = full_data[i]
         image_path = current_image_data['init_img']
-        image_path = '.' + image_path 
-        image_folder = image_path.split('/')[1] # after '.'
         prompt_src = current_image_data.get('source_prompt', "") # default empty string
         prompt_tar_list = current_image_data['target_prompts']
 
@@ -127,8 +130,6 @@ if __name__ == "__main__":
         # iterate over decoder prompts
         for k in range(len(prompt_tar_list)):
             prompt_tar = prompt_tar_list[k]
-            save_path = os.path.join(f'./results/', args.mode+xa_sa_string+str(time_stamp), image_path.split(sep='.')[0], 'src_' + prompt_src.replace(" ", "_"), 'dec_' + prompt_tar.replace(" ", "_"))
-            os.makedirs(save_path, exist_ok=True)
 
             # Check if number of words in encoder and decoder text are equal
             src_tar_len_eq = (len(prompt_src.split(" ")) == len(prompt_tar.split(" ")))
@@ -192,11 +193,12 @@ if __name__ == "__main__":
                     if x0_dec.dim()<4:
                         x0_dec = x0_dec[None,:,:,:]
                     img = image_grid(x0_dec)
-                       
-                    # same output
-                    current_GMT = time.gmtime()
-                    time_stamp_name = calendar.timegm(current_GMT)
-                    image_name_png = f'cfg_d_{cfg_scale_tar}_' + f'skip_{skip}_' + f'id_{args.id_emb_scale}' + ".png"
 
-                    save_full_path = os.path.join(save_path, image_name_png)
-                    img.save(image_name_png)
+                    id_emb_scale = args.id_emb_scale + 1.0 if args.shift_negatives else args.id_emb_scale
+
+                    # Replace dots with underscores
+                    filename_wo_ext = (
+                        f"cfg-tar-{cfg_scale_tar}-skip-{skip}-id-{id_emb_scale}".replace(".", "_")
+                    )
+
+                    img.save(filename_wo_ext + ".png")
