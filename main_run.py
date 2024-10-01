@@ -56,7 +56,7 @@ if __name__ == "__main__":
         type=float,
         default="1.0",
         help=(
-            "controls the amount of text or image conditioning to apply to the model."
+            "Controls the amount of text or image conditioning to apply to the model."
             "A value of 1.0 means the model is only conditioned on the image prompt."
         )
     )
@@ -64,12 +64,18 @@ if __name__ == "__main__":
         "--id_emb_scale",
         type=float,
         default=1.0,
-        help="scale for the identity embedding. The default value is 1.0.",
+        help="Scale for the identity embedding. The default value is 1.0.",
     )
     parser.add_argument(
-        "--shift_negatives",
+        "--shift_neg_id_emb_scale",
         action="store_true",
-        help="negative id_emb_scale value will be shifted to become positive in the output filename when the flag is set to True",
+        help="Negative id_emb_scale value will be shifted to positive in the output filename when the flag is True.",
+    )
+    parser.add_argument(
+        "--shift_neg_cfg",
+        type=float,
+        default=0.0,
+        help="Add this value to the classifier-free guidance to make negative values positive in the output filename.",
     )
     
     args = parser.parse_args()
@@ -194,11 +200,13 @@ if __name__ == "__main__":
                         x0_dec = x0_dec[None,:,:,:]
                     img = image_grid(x0_dec)
 
-                    id_emb_scale = args.id_emb_scale + 1.0 if args.shift_negatives else args.id_emb_scale
+                    id_emb_scale = args.id_emb_scale + 1.0 if args.shift_neg_id_emb_scale else args.id_emb_scale
+                    shifted_cfg_scale_tar = cfg_scale_tar + args.shift_neg_cfg
 
-                    # Replace dots with underscores
+                    # Replace dots with underscores.
+                    # Format cfg to have at least 4 characters in total, including one digit after the decimal point, and pad it with leading zeros if necessary.
                     filename_wo_ext = (
-                        f"cfg-tar-{cfg_scale_tar}-skip-{skip}-id-{id_emb_scale}".replace(".", "_")
+                        f"cfg-tar-{shifted_cfg_scale_tar:04.1f}-skip-{skip}-id-{id_emb_scale}".replace(".", "_")
                     )
 
                     img.save(filename_wo_ext + ".png")
