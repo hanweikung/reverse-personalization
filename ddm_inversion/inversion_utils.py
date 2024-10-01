@@ -112,7 +112,7 @@ def inversion_forward_process(model, x0,
                             ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
                             ):
 
-    if not prompt=="":
+    if prompt:
         text_embeddings = encode_text(model, prompt)
     uncond_embedding = encode_text(model, "")
     timesteps = model.scheduler.timesteps.to(model.device)
@@ -142,10 +142,10 @@ def inversion_forward_process(model, x0,
             ip_adapter_image_embeds=ip_adapter_image_embeds,
             device=model.device,
             num_images_per_prompt=1,
-            do_classifier_free_guidance=prompt!="",
+            do_classifier_free_guidance=prompt is not None,
         )
         added_uncond_kwargs = {"image_embeds": [image_embeds[0][:1, :]]}
-        if prompt != "":
+        if prompt:
             added_cond_kwargs = {"image_embeds": [image_embeds[0][1:, :]]}
     else:
         added_uncond_kwargs = None
@@ -160,10 +160,10 @@ def inversion_forward_process(model, x0,
                     
         with torch.no_grad():
             out = model.unet.forward(xt, timestep =  t, encoder_hidden_states = uncond_embedding, added_cond_kwargs=added_uncond_kwargs)
-            if not prompt=="":
+            if prompt:
                 cond_out = model.unet.forward(xt, timestep=t, encoder_hidden_states = text_embeddings, added_cond_kwargs=added_cond_kwargs)
 
-        if not prompt=="":
+        if prompt:
             ## classifier free guidance
             noise_pred = out.sample + cfg_scale * (cond_out.sample - out.sample)
         else:
