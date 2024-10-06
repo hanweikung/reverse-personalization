@@ -99,6 +99,13 @@ if __name__ == "__main__":
 
     # load/reload model:
     ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
+    ldm_stable.load_ip_adapter(
+        "h94/IP-Adapter-FaceID",
+        subfolder=None,
+        weight_name="ip-adapter-faceid_sd15.bin",
+        image_encoder_folder=None,
+    )
+    ldm_stable.set_ip_adapter_scale(args.ip_adapter_scale)
 
     for i in range(len(full_data)):
         current_image_data = full_data[i]
@@ -144,17 +151,9 @@ if __name__ == "__main__":
                 for skip in skip_zs:    
                     if args.mode=="our_inv":
                         # reverse process (via Zs and wT)
-                        controller = AttentionStore()
+                        # controller = AttentionStore()
+                        controller = None
                         # register_attention_control(ldm_stable, controller)
-                        load_ip_adapter(
-                            ldm_stable,
-                            "h94/IP-Adapter-FaceID",
-                            subfolder=None,
-                            weight_name="ip-adapter-faceid_sd15.bin",
-                            image_encoder_folder=None,
-                            controller=controller,
-                        )
-                        set_ip_adapter_scale(ldm_stable, args.ip_adapter_scale)
                         w0, _ = inversion_reverse_process(ldm_stable, xT=wts[args.num_diffusion_steps-skip], etas=eta, prompts=[prompt_tar], cfg_scales=[cfg_scale_tar], prog_bar=True, zs=zs[:(args.num_diffusion_steps-skip)], controller=controller, ip_adapter_image_embeds=[id_embeds])
 
                     elif args.mode=="p2pinv":
