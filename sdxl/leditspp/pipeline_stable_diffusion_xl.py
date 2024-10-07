@@ -54,6 +54,10 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
 from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
 
+import numpy as np
+from .scheduling_dpmsolver_multistep_inject import DPMSolverMultistepSchedulerInject
+from diffusers.schedulers import DDIMScheduler
+from .pipeline_output import LEditsPPInversionPipelineOutput
 
 if is_invisible_watermark_available():
     from diffusers.pipelines.stable_diffusion_xl.watermark import StableDiffusionXLWatermarker
@@ -247,6 +251,11 @@ class StableDiffusionXLPipeline(
         add_watermarker: Optional[bool] = None,
     ):
         super().__init__()
+
+        if not isinstance(scheduler, DDIMScheduler) or not isinstance(scheduler, DPMSolverMultistepSchedulerInject):
+            scheduler = DPMSolverMultistepSchedulerInject.from_config(scheduler.config, algorithm_type="sde-dpmsolver++", solver_order=2)
+            logger.warning("This pipeline only supports DDIMScheduler and DPMSolverMultistepSchedulerInject. "
+                           "The scheduler has been changed to DPMSolverMultistepSchedulerInject.")
 
         self.register_modules(
             vae=vae,
@@ -798,7 +807,7 @@ class StableDiffusionXLPipeline(
     # corresponds to doing no classifier free guidance.
     @property
     def do_classifier_free_guidance(self):
-        return self._guidance_scale > 1 and self.unet.config.time_cond_proj_dim is None
+        return True
 
     @property
     def cross_attention_kwargs(self):
@@ -1091,9 +1100,11 @@ class StableDiffusionXLPipeline(
         )
 
         # 4. Prepare timesteps
-        timesteps, num_inference_steps = retrieve_timesteps(
-            self.scheduler, num_inference_steps, device, timesteps, sigmas
-        )
+        timesteps = self.scheduler.timesteps
+        t_to_idx = {int(v): k for k, v in enumerate(timesteps)}
+        # timesteps, num_inference_steps = retrieve_timesteps(
+        #     self.scheduler, num_inference_steps, device, timesteps, sigmas
+        # )
 
         # 5. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
@@ -1217,7 +1228,9 @@ class StableDiffusionXLPipeline(
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                idx = t_to_idx[int(t)]
+                latents = self.scheduler.step(noise_pred, t, latents, variance_noise=self.zs[idx], **extra_step_kwargs).prev_sample
+                # latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
@@ -1298,3 +1311,330 @@ class StableDiffusionXLPipeline(
             return (image,)
 
         return StableDiffusionXLPipelineOutput(images=image)
+
+    @torch.no_grad()
+    def invert(self,
+               image: PipelineImageInput,
+               source_prompt: str = "",
+               source_prompt_2: str = None,
+               source_guidance_scale=3.5,
+               negative_prompt: str = None,
+               negative_prompt_2: str = None,
+               num_inversion_steps: int = 100,
+               skip: float = .15,
+               eta: float = 1.0,
+               generator: Optional[torch.Generator] = None,
+               height: Optional[int] = None,
+               width: Optional[int] = None,
+               original_size: Optional[Tuple[int, int]] = None,
+               crops_coords_top_left: Tuple[int, int] = (0, 0),
+               target_size: Optional[Tuple[int, int]] = None,
+               num_zero_noise_steps=0,
+               ip_adapter_image: Optional[PipelineImageInput] = None,
+               ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
+               ):
+        """
+        Inverts a real image according to Algorihm 1 in https://arxiv.org/pdf/2304.06140.pdf,
+        based on the code in https://github.com/inbarhub/DDPM_inversion
+
+        returns:
+        zs - noise maps
+        xts - intermediate inverted latents
+        """
+
+        self.eta = eta
+        assert (self.eta > 0)
+
+        train_steps = self.scheduler.config.num_train_timesteps
+        timesteps = torch.from_numpy(
+            np.linspace(train_steps - skip * train_steps - 1, 1, num_inversion_steps).astype(np.int64)).to(self.device)
+
+        self.num_inversion_steps = timesteps.shape[0]
+        self.scheduler.num_inference_steps = timesteps.shape[0]
+        self.scheduler.timesteps = timesteps
+        reset_dpm(self.scheduler)
+
+        cross_attention_kwargs = None  # TODO
+        batch_size = 1
+
+        num_images_per_prompt = 1
+
+        device = self._execution_device
+
+        # Reset attn processor, we do not want to store attn maps during inversion
+        # self.unet.set_default_attn_processor()
+
+        # 0. Always activate classifier-free guidance
+        do_classifier_free_guidance = True
+
+        # 1. Default height and width to unet
+        height = self.default_sample_size * self.vae_scale_factor
+        width = self.default_sample_size * self.vae_scale_factor
+        original_size = (height, width)
+        target_size = (height, width)
+
+        # 2. get embeddings
+        text_encoder_lora_scale = (
+            cross_attention_kwargs.get("scale", None) if cross_attention_kwargs is not None else None
+        )
+
+        (
+            prompt_embeds,
+            negative_prompt_embeds,
+            pooled_prompt_embeds,
+            negative_pooled_prompt_embeds,
+        ) = self.encode_prompt(
+            prompt=source_prompt,
+            prompt_2=source_prompt_2,
+            device=device,
+            num_images_per_prompt=num_images_per_prompt,
+            do_classifier_free_guidance=do_classifier_free_guidance,
+            negative_prompt=negative_prompt,
+            negative_prompt_2=negative_prompt_2,
+            lora_scale=text_encoder_lora_scale,
+        )
+
+        # 3. Prepare added time ids & embeddings
+        add_text_embeds = pooled_prompt_embeds
+        add_time_ids = self._get_add_time_ids(
+            original_size=original_size,
+            crops_coords_top_left=crops_coords_top_left,
+            target_size=target_size,
+            dtype=prompt_embeds.dtype,
+            text_encoder_projection_dim=self.text_encoder_2.config.projection_dim,
+        )
+
+        if do_classifier_free_guidance:
+            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
+            add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds], dim=0)
+            add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
+
+        prompt_embeds = prompt_embeds.to(device)
+        add_text_embeds = add_text_embeds.to(device)
+        add_time_ids = add_time_ids.to(device).repeat(batch_size * num_images_per_prompt, 1)
+
+        if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+            image_embeds = self.prepare_ip_adapter_image_embeds(
+                ip_adapter_image,
+                ip_adapter_image_embeds,
+                device,
+                batch_size * num_images_per_prompt,
+                do_classifier_free_guidance=do_classifier_free_guidance,
+            )
+
+        # 4. prepare image
+        size = self.unet.sample_size * self.vae_scale_factor
+        image = image.convert("RGB").resize((size, size))
+        image = self.image_processor.preprocess(image)
+        image = image.to(device=device, dtype=self.text_encoder_2.dtype)
+
+        if image.shape[1] == 4:
+            x0 = image
+        else:
+            if self.vae.config.force_upcast:
+                image = image.float()
+                self.upcast_vae()
+
+            x0 = self.vae.encode(image).latent_dist.sample(generator)
+            x0 = x0.to(self.text_encoder_2.dtype)
+            x0 = self.vae.config.scaling_factor * x0
+
+        # autoencoder reconstruction
+        if self.vae.dtype == torch.float16 and self.vae.config.force_upcast:
+            self.upcast_vae()
+            x0_tmp = x0.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
+            image_rec = self.vae.decode(x0_tmp / self.vae.config.scaling_factor, return_dict=False)[0]
+        elif self.vae.config.force_upcast:
+            x0_tmp = x0.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
+            image_rec = self.vae.decode(x0_tmp / self.vae.config.scaling_factor, return_dict=False)[0]
+        else:
+            image_rec = self.vae.decode(x0 / self.vae.config.scaling_factor, return_dict=False)[0]
+
+        image_rec = self.image_processor.postprocess(image_rec, output_type="pil")
+
+        # 5. find zs and xts
+        variance_noise_shape = (
+            self.num_inversion_steps,
+            self.unet.config.in_channels,
+            self.unet.sample_size,
+            self.unet.sample_size,
+        )
+
+        # intermediate latents
+        t_to_idx = {int(v): k for k, v in enumerate(timesteps)}
+        xts = torch.zeros(size=variance_noise_shape, device=self.device, dtype=negative_prompt_embeds.dtype)
+
+        for t in reversed(timesteps):
+            idx = self.num_inversion_steps - t_to_idx[int(t)] - 1
+            noise = randn_tensor(shape=x0.shape, generator=generator, device=self.device, dtype=x0.dtype)
+            xts[idx] = self.scheduler.add_noise(x0, noise, t)
+        xts = torch.cat([x0, xts], dim=0)
+
+        # noise maps
+        zs = torch.zeros(size=variance_noise_shape, device=self.device, dtype=negative_prompt_embeds.dtype)
+
+        for t in self.progress_bar(timesteps):
+            idx = self.num_inversion_steps - t_to_idx[int(t)] - 1
+            # 1. predict noise residual
+            xt = xts[idx + 1][None]
+
+            latent_model_input = (
+                torch.cat([xt] * 2) if do_classifier_free_guidance else xt
+            )
+            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+            added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+            if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+                added_cond_kwargs["image_embeds"] = image_embeds
+            noise_pred = self.unet(
+                latent_model_input,
+                t,
+                encoder_hidden_states=prompt_embeds,
+                cross_attention_kwargs=cross_attention_kwargs,
+                added_cond_kwargs=added_cond_kwargs,
+                return_dict=False,
+            )[0]
+
+            # 2. perform guidance
+            if do_classifier_free_guidance:
+                noise_pred_out = noise_pred.chunk(2)
+                noise_pred_uncond, noise_pred_text = noise_pred_out[0], noise_pred_out[1]
+                noise_pred = noise_pred_uncond + source_guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+            xtm1 = xts[idx][None]
+            z, xtm1_corrected = compute_noise(self.scheduler, xtm1, xt, t, noise_pred, eta)
+            zs[idx] = z
+
+            # correction to avoid error accumulation
+            xts[idx] = xtm1_corrected
+
+        self.init_latents = xts[-1].expand(batch_size, -1, -1, -1)
+        zs = zs.flip(0)
+        for i in range(num_zero_noise_steps):
+            zs[-1-i] = torch.zeros_like(zs[-1])
+
+        self.zs = zs
+        return LEditsPPInversionPipelineOutput(vae_reconstruction_images=image_rec)
+
+
+def reset_dpm(scheduler):
+    if isinstance(scheduler, DPMSolverMultistepSchedulerInject):
+        scheduler.model_outputs = [
+                                      None,
+                                  ] * scheduler.config.solver_order
+        scheduler.lower_order_nums = 0
+
+
+def compute_noise_ddim(scheduler, prev_latents, latents, timestep, noise_pred, eta):
+    # 1. get previous step value (=t-1)
+    prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
+
+    # 2. compute alphas, betas
+    alpha_prod_t = scheduler.alphas_cumprod[timestep]
+    alpha_prod_t_prev = (
+        scheduler.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else scheduler.final_alpha_cumprod
+    )
+
+    beta_prod_t = 1 - alpha_prod_t
+
+    # 3. compute predicted original sample from predicted noise also called
+    # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+    pred_original_sample = (latents - beta_prod_t ** (0.5) * noise_pred) / alpha_prod_t ** (0.5)
+
+    # 4. Clip "predicted x_0"
+    if scheduler.config.clip_sample:
+        pred_original_sample = torch.clamp(pred_original_sample, -1, 1)
+
+    # 5. compute variance: "sigma_t(η)" -> see formula (16)
+    # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
+    variance = scheduler._get_variance(timestep, prev_timestep)
+    std_dev_t = eta * variance ** (0.5)
+
+    # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+    pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t ** 2) ** (0.5) * noise_pred
+
+    # modifed so that updated xtm1 is returned as well (to avoid error accumulation)
+    mu_xt = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
+    noise = (prev_latents - mu_xt) / (variance ** (0.5) * eta)
+
+    return noise, mu_xt + (eta * variance ** 0.5) * noise
+
+
+# Copied from pipelines.StableDiffusion.CycleDiffusionPipeline.compute_noise
+def compute_noise_sde_dpm_pp_2nd(scheduler, prev_latents, latents, timestep, noise_pred, eta):
+    def first_order_update(model_output, timestep, prev_timestep, sample):
+        lambda_t, lambda_s = scheduler.lambda_t[prev_timestep], scheduler.lambda_t[timestep]
+        alpha_t, alpha_s = scheduler.alpha_t[prev_timestep], scheduler.alpha_t[timestep]
+        sigma_t, sigma_s = scheduler.sigma_t[prev_timestep], scheduler.sigma_t[timestep]
+        h = lambda_t - lambda_s
+
+        mu_xt = (
+                (sigma_t / sigma_s * torch.exp(-h)) * sample
+                + (alpha_t * (1 - torch.exp(-2.0 * h))) * model_output
+        )
+        sigma = sigma_t * torch.sqrt(1.0 - torch.exp(-2 * h))
+
+        noise = (prev_latents - mu_xt) / sigma
+
+        prev_sample = mu_xt + sigma * noise
+
+        return noise, prev_sample
+
+    def second_order_update(model_output_list, timestep_list, prev_timestep, sample):
+        t, s0, s1 = prev_timestep, timestep_list[-1], timestep_list[-2]
+        m0, m1 = model_output_list[-1], model_output_list[-2]
+        lambda_t, lambda_s0, lambda_s1 = scheduler.lambda_t[t], scheduler.lambda_t[s0], scheduler.lambda_t[s1]
+        alpha_t, alpha_s0 = scheduler.alpha_t[t], scheduler.alpha_t[s0]
+        sigma_t, sigma_s0 = scheduler.sigma_t[t], scheduler.sigma_t[s0]
+        h, h_0 = lambda_t - lambda_s0, lambda_s0 - lambda_s1
+        r0 = h_0 / h
+        D0, D1 = m0, (1.0 / r0) * (m0 - m1)
+
+        mu_xt = (
+                (sigma_t / sigma_s0 * torch.exp(-h)) * sample
+                + (alpha_t * (1 - torch.exp(-2.0 * h))) * D0
+                + 0.5 * (alpha_t * (1 - torch.exp(-2.0 * h))) * D1
+        )
+        sigma = sigma_t * torch.sqrt(1.0 - torch.exp(-2 * h))
+
+        noise = (prev_latents - mu_xt) / sigma
+
+        prev_sample = mu_xt + sigma * noise
+
+        return noise, prev_sample
+
+    step_index = (scheduler.timesteps == timestep).nonzero()
+    if len(step_index) == 0:
+        step_index = len(scheduler.timesteps) - 1
+    else:
+        step_index = step_index[0].item()
+
+    prev_timestep = 0 if step_index == len(scheduler.timesteps) - 1 else scheduler.timesteps[step_index + 1]
+
+    model_output = scheduler.convert_model_output(noise_pred, timestep, latents)
+
+    for i in range(scheduler.config.solver_order - 1):
+        scheduler.model_outputs[i] = scheduler.model_outputs[i + 1]
+    scheduler.model_outputs[-1] = model_output
+
+    if scheduler.lower_order_nums < 1:
+        noise, prev_sample = first_order_update(model_output, timestep, prev_timestep, latents)
+    else:
+        timestep_list = [scheduler.timesteps[step_index - 1], timestep]
+        noise, prev_sample = second_order_update(scheduler.model_outputs, timestep_list, prev_timestep, latents)
+
+    if scheduler.lower_order_nums < scheduler.config.solver_order:
+        scheduler.lower_order_nums += 1
+
+    return noise, prev_sample
+
+
+def compute_noise(scheduler, *args):
+    if isinstance(scheduler, DDIMScheduler):
+        return compute_noise_ddim(scheduler, *args)
+    elif isinstance(scheduler,
+                    DPMSolverMultistepSchedulerInject) and scheduler.config.algorithm_type == 'sde-dpmsolver++' \
+            and scheduler.config.solver_order == 2:
+        return compute_noise_sde_dpm_pp_2nd(scheduler, *args)
+    else:
+        raise NotImplementedError

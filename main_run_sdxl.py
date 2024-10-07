@@ -15,6 +15,9 @@ from sdxl.diffusers.pipeline_stable_diffusion_xl import (
 from sdxl.leditspp.pipeline_stable_diffusion_xl import (
     StableDiffusionXLPipeline as StableDiffusionPipelineXL_LEDITS,
 )
+from sdxl.leditspp.scheduling_dpmsolver_multistep_inject import (
+    DPMSolverMultistepSchedulerInject,
+)
 
 
 def parse_args():
@@ -58,17 +61,31 @@ def parse_args():
     )
     parser.add_argument(
         "--inversion",
-        default="ledits++",
-        choices=["ledits++", "diffusers"],
+        default="leditspp",
+        choices=["leditspp", "diffusers"],
         type=str,
-        help="The inversion mode. The default value is 'ledits++'.",
+        help="The inversion mode. The default value is 'leditspp'.",
+    )
+    parser.add_argument(
+        "--num_inversion_steps",
+        default=100,
+        type=int,
+        help="The number of inversion steps",
+    )
+    parser.add_argument(
+        "--resolution",
+        type=int,
+        default=1024,
+        help=(
+            "The resolution for output images."
+        ),
     )
 
     args = parser.parse_args()
     return args
 
 
-def extract_id_embeddings(image_path, id_emb_scale):
+def extract_id_embeddings(image_path, id_emb_scale, dtype):
     image = load_image(image_path)
     ref_images_embeds = []
     app = FaceAnalysis(
@@ -83,35 +100,43 @@ def extract_id_embeddings(image_path, id_emb_scale):
     ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
     neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
     id_embeds = torch.cat([neg_ref_images_embeds, ref_images_embeds]).to(
-        dtype=torch.float16, device="cuda"
+        dtype=dtype, device="cuda"
     )
     return id_embeds
 
 
 if __name__ == "__main__":
     args = parse_args()
+    dtype = torch.float16
 
     image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-        "h94/IP-Adapter", subfolder="models/image_encoder", torch_dtype=torch.float16
+        "h94/IP-Adapter", subfolder="models/image_encoder", torch_dtype=dtype
     )
 
     image = Image.open(args.input_image)
-    # image = Image.open("example_images/yann-lecun.jpg")
-    image = image.resize((768, 768), Image.Resampling.LANCZOS)
+    image = image.resize((args.resolution, args.resolution), Image.Resampling.LANCZOS)
 
     pipeline_class = (
         StableDiffusionPipelineXL_LEDITS
-        if args.inversion == "ledits++"
+        if args.inversion == "leditspp"
         else LEditsPPPipelineStableDiffusionXL
     )
+    model_id = "stabilityai/stable-diffusion-xl-base-1.0"
     pipe = pipeline_class.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
+        model_id,
         image_encoder=image_encoder,
-        torch_dtype=torch.float16,
+        torch_dtype=dtype,
     )
+    if args.inversion == "leditspp":
+        pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
+            model_id,
+            subfolder="scheduler",
+            algorithm_type="sde-dpmsolver++",
+            solver_order=2,
+        )
     pipe = pipe.to("cuda")
 
-    id_embeds = extract_id_embeddings(args.input_image, args.id_emb_scale)
+    id_embeds = extract_id_embeddings(args.input_image, args.id_emb_scale, dtype)
     pipe.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
@@ -124,7 +149,7 @@ if __name__ == "__main__":
 
     reconstructed_image = pipe.invert(
         image=image,
-        num_inversion_steps=100,
+        num_inversion_steps=args.num_inversion_steps,
         skip=args.skip,
         source_guidance_scale=args.guidance_scale,
         ip_adapter_image_embeds=[id_embeds],
@@ -139,7 +164,9 @@ if __name__ == "__main__":
         guidance_scale=args.guidance_scale,
         timesteps=pipe.scheduler.timesteps,
         latents=pipe.init_latents,
+        num_inference_steps=args.num_inversion_steps,
     ).images[0]
+    image = image.resize((args.resolution, args.resolution), Image.Resampling.LANCZOS)
 
     id_emb_scale = (
         args.id_emb_scale + 1.0 if args.shift_neg_id_emb_scale else args.id_emb_scale
