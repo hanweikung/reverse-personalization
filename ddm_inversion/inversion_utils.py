@@ -149,6 +149,8 @@ def inversion_forward_process(model, x0,
             added_cond_kwargs = {"image_embeds": [image_embeds[0][1:, :]]}
     else:
         added_uncond_kwargs = None
+        if prompt:
+            added_cond_kwargs = None
 
     for t in op:
         # idx = t_to_idx[int(t)]
@@ -275,6 +277,8 @@ def inversion_reverse_process(model,
             added_cond_kwargs = {"image_embeds": [image_embeds[0][1:, :]]}
     else:
         added_uncond_kwargs = None
+        if prompts:
+            added_cond_kwargs = None
 
     for t in op:
         idx = model.scheduler.num_inference_steps-t_to_idx[int(t)]-(model.scheduler.num_inference_steps-zs.shape[0]+1)    
