@@ -1,10 +1,7 @@
 import cv2
-import insightface
 import numpy as np
 import torch
 from diffusers.utils import load_image
-from facexlib.utils.face_restoration_helper import FaceRestoreHelper
-from huggingface_hub import snapshot_download
 from insightface.app import FaceAnalysis
 
 
@@ -28,22 +25,6 @@ class FaceEmbeddingExtractor:
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         self.app.prepare(ctx_id=ctx_id, det_thresh=det_thresh, det_size=det_size)
-
-        # initialize face helper
-        self.face_helper = FaceRestoreHelper(
-            upscale_factor=1,
-            face_size=512,
-            crop_ratio=(1, 1),
-            det_model="retinaface_resnet50",
-            save_ext="png",
-        )
-
-        # Initialize the antelopev2 model using the InsightFace model_zoo API
-        snapshot_download("DIAMONIK7777/antelopev2", local_dir="models/antelopev2")
-        self.antelopev2_model = insightface.model_zoo.get_model(
-            "models/antelopev2/glintr100.onnx"
-        )
-        self.antelopev2_model.prepare(ctx_id=0)  # ctx_id=0 for GPU, -1 for CPU
 
     def get_face_embeddings(
         self, image_path, scale_factor=1.0, dtype=torch.float32, device="cuda"
@@ -71,28 +52,7 @@ class FaceEmbeddingExtractor:
         faces = self.app.get(image)
 
         if len(faces) == 0:
-            # raise ValueError(f"No face detected in {image_path}.")
-
-            # return None  # No faces detected
-
-            self.face_helper.clean_all()
-
-            self.face_helper.read_image(cv2.imread(image_path))
-
-            # get face landmarks for each face
-            self.face_helper.get_face_landmarks_5(only_center_face=True)
-
-            # align and warp each face
-            self.face_helper.align_warp_face()
-
-            # Raise an error if no faces are detected
-            if len(self.face_helper.cropped_faces) == 0:
-                raise ValueError(f"No face detected in {image_path}.")
-
-            cropped_face = self.face_helper.cropped_faces[0]
-            normed_embedding = self.normalize_embedding(
-                self.antelopev2_model.get_feat(cropped_face)[0]
-            )
+            raise ValueError(f"No face detected in {image_path}.")
         else:
             # Find the largest face by bounding box area
             largest_face = max(
@@ -115,29 +75,3 @@ class FaceEmbeddingExtractor:
         ).to(dtype=dtype, device=device)
 
         return concatenated_embedding
-
-    def normalize_embedding(self, embedding):
-        """
-        Normalize the face embedding using L2 normalization.
-        Raises an error if the norm is zero.
-
-        Args:
-        embedding (np.ndarray): The face embedding to be normalized.
-
-        Returns:
-        np.ndarray: The normalized embedding.
-
-        Raises:
-        ValueError: If the L2 norm of the embedding is zero.
-        """
-        # Calculate the L2 norm of the embedding
-        l2_norm = np.linalg.norm(embedding)
-
-        # Raise an error if the norm is zero
-        if l2_norm == 0:
-            raise ValueError("The L2 norm of the embedding is zero, cannot normalize.")
-
-        # Normalize the embedding
-        normalized_embedding = embedding / l2_norm
-
-        return normalized_embedding
