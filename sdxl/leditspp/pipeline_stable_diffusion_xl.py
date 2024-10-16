@@ -1312,6 +1312,38 @@ class StableDiffusionXLPipeline(
 
         return StableDiffusionXLPipelineOutput(images=image)
 
+
+    @torch.no_grad()
+    # Modified from diffusers.pipelines.ledits_pp.pipeline_leditspp_stable_diffusion.LEditsPPPipelineStableDiffusion.encode_image
+    def vae_encode_image(self, image, dtype=None, height=None, width=None, resize_mode="default", crops_coords=None):
+        image = self.image_processor.preprocess(
+            image=image, height=height, width=width, resize_mode=resize_mode, crops_coords=crops_coords
+        )
+        resized = self.image_processor.postprocess(image=image, output_type="pil")
+
+        if max(image.shape[-2:]) > self.vae.config["sample_size"] * 1.5:
+            logger.warning(
+                "Your input images far exceed the default resolution of the underlying diffusion model. "
+                "The output images may contain severe artifacts! "
+                "Consider down-sampling the input using the `height` and `width` parameters"
+            )
+        image = image.to(self.device, dtype=dtype)
+        needs_upcasting = (image.dtype == torch.float16 or self.vae.dtype == torch.float16) and self.vae.config.force_upcast
+
+        if needs_upcasting:
+            image = image.float()
+            self.upcast_vae()
+
+        x0 = self.vae.encode(image).latent_dist.mode()
+        x0 = x0.to(dtype)
+        # cast back to fp16 if needed
+        if needs_upcasting:
+            self.vae.to(dtype=torch.float16)
+
+        x0 = self.vae.config.scaling_factor * x0
+        return x0, resized
+
+
     @torch.no_grad()
     def invert(self,
                image: PipelineImageInput,
@@ -1367,9 +1399,10 @@ class StableDiffusionXLPipeline(
         # 0. Always activate classifier-free guidance
         do_classifier_free_guidance = True
 
-        # 1. Default height and width to unet
-        height = self.default_sample_size * self.vae_scale_factor
-        width = self.default_sample_size * self.vae_scale_factor
+        # 1. prepare image
+        x0, _ = self.vae_encode_image(image, dtype=self.text_encoder_2.dtype)
+        height = x0.shape[2] * self.vae_scale_factor
+        width = x0.shape[3] * self.vae_scale_factor
         original_size = (height, width)
         target_size = (height, width)
 
@@ -1422,23 +1455,6 @@ class StableDiffusionXLPipeline(
                 do_classifier_free_guidance=do_classifier_free_guidance,
             )
 
-        # 4. prepare image
-        size = self.unet.sample_size * self.vae_scale_factor
-        image = image.convert("RGB").resize((size, size))
-        image = self.image_processor.preprocess(image)
-        image = image.to(device=device, dtype=self.text_encoder_2.dtype)
-
-        if image.shape[1] == 4:
-            x0 = image
-        else:
-            if self.vae.config.force_upcast:
-                image = image.float()
-                self.upcast_vae()
-
-            x0 = self.vae.encode(image).latent_dist.sample(generator)
-            x0 = x0.to(self.text_encoder_2.dtype)
-            x0 = self.vae.config.scaling_factor * x0
-
         # autoencoder reconstruction
         if self.vae.dtype == torch.float16 and self.vae.config.force_upcast:
             self.upcast_vae()
@@ -1455,9 +1471,9 @@ class StableDiffusionXLPipeline(
         # 5. find zs and xts
         variance_noise_shape = (
             self.num_inversion_steps,
-            self.unet.config.in_channels,
-            self.unet.sample_size,
-            self.unet.sample_size,
+            x0.shape[1],
+            x0.shape[2],
+            x0.shape[3],
         )
 
         # intermediate latents

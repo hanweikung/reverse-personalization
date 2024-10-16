@@ -7,22 +7,26 @@ import torch
 import torchvision.transforms.v2 as transforms_v2
 from accelerate import Accelerator
 from datasets import load_dataset
-from diffusers import DDIMScheduler, StableDiffusionPipeline
 from diffusers.utils import make_image_grid
-from torchvision.transforms.v2 import ToPILImage
 from tqdm import tqdm
+from transformers import CLIPVisionModelWithProjection
 
-from ddm_inversion.inversion_utils import (
-    inversion_forward_process,
-    inversion_reverse_process,
-)
+from custom_ip_adapter_loader import load_ip_adapter, set_ip_adapter_scale
 from face_embedding_utils import FaceEmbeddingExtractor
+from sdxl.diffusers.pipeline_stable_diffusion_xl import (
+    StableDiffusionXLPipeline as LEditsPPPipelineStableDiffusionXL,
+)
+from sdxl.leditspp.pipeline_stable_diffusion_xl import (
+    StableDiffusionXLPipeline as StableDiffusionPipelineXL_LEDITS,
+)
+from sdxl.leditspp.scheduling_dpmsolver_multistep_inject import (
+    DPMSolverMultistepSchedulerInject,
+)
 
 
-def parse_arguments():
-    # Set up argument parsing
+def parse_args():
     parser = argparse.ArgumentParser(
-        description="Load image files from a JSONL file and anonymize the faces present in those images."
+        description="Demonstrate how to use LEDITS++ with SDXL and the IP adapter"
     )
     parser.add_argument(
         "--dataset_loading_script_path",
@@ -32,10 +36,76 @@ def parse_arguments():
         help="Path to the dataset loading script file.",
     )
     parser.add_argument(
+        "--skip",
+        type=float,
+        default=0.7,
+        help="Controlling the adherence to the input image.",
+    )
+    parser.add_argument(
+        "--id_emb_scale",
+        type=float,
+        default=-1.0,
+        help="Scaling factor for the identity embedding, with a default value of -1.0 for anonymization purposes.",
+    )
+    parser.add_argument(
+        "--guidance_scale",
+        type=float,
+        default=2.5,
+        help="CFG scale for guidance. The default value is 2.5.",
+    )
+    parser.add_argument(
+        "--inversion",
+        default="leditspp",
+        choices=["leditspp", "diffusers"],
+        type=str,
+        help="The inversion mode. The default value is 'leditspp'.",
+    )
+    parser.add_argument(
+        "--num_inversion_steps",
+        default=100,
+        type=int,
+        help="The number of inversion steps.",
+    )
+    parser.add_argument(
         "--resolution",
         type=int,
-        default=512,
-        help="The resolution for input images, all the images in the test dataset will be resized to this resolution.",
+        default=1024,
+        help="The resolution for output images.",
+    )
+    parser.add_argument(
+        "--ip_adapter_scale",
+        type=float,
+        default="1.0",
+        help=(
+            "Controls the amount of text or image conditioning to apply to the model."
+            "A value of 1.0 means the model is only conditioned on the image prompt."
+        ),
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None, help="A seed for reproducible inference."
+    )
+    parser.add_argument(
+        "--vis_input",
+        action="store_true",
+        help="If set, save the input and generated images together as a single output image for easy visualization.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="./test-infer/",
+        help="The output directory where generated images are saved.",
+    )
+    parser.add_argument(
+        "--log_file",
+        type=str,
+        default="log.txt",
+        help="The output text file records the images in which faces could not be detected.",
+    )
+    parser.add_argument(
+        "--det_thresh",
+        type=float,
+        default=0.1,
+        help="Set your desired threshold for face detection.",
     )
     parser.add_argument(
         "--center_crop",
@@ -61,70 +131,14 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
-        "--ip_adapter_scale",
-        type=float,
-        default="1.0",
-        help=(
-            "Controls the amount of text or image conditioning to apply to the model."
-            "A value of 1.0 means the model is only conditioned on the image prompt."
-        ),
-    )
-    parser.add_argument(
-        "--id_emb_scale",
-        type=float,
-        default=-1.0,
-        help="Scaling factor for the identity embedding, with a default value of -1.0 for anonymization purposes.",
-    )
-
-    parser.add_argument("--num_diffusion_steps", type=int, default=100)
-    parser.add_argument(
-        "--guidance_scale",
-        type=float,
-        default=7.0,
-        help=(
-            "A higher guidance scale value encourages the model to generate images closely linked to the text"
-            "prompt at the expense of lower image quality."
-        ),
-    )
-    parser.add_argument(
-        "--skip",
-        type=int,
-        default=70,
-        help="Controlling the adherence to the input image.",
-    )
-    parser.add_argument("--eta", type=float, default=1)
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="./test-infer/",
-        help="The output directory where generated images are saved.",
-    )
-    parser.add_argument(
-        "--log_file",
-        type=str,
-        default="log.txt",
-        help="The output text file records the images in which faces could not be detected.",
-    )
-    parser.add_argument(
-        "--vis_input",
-        action="store_true",
-        help="If set, save the input and generated images together as a single output image for easy visualization.",
-    )
-    parser.add_argument(
-        "--det_thresh",
-        type=float,
-        default=0.1,
-        help="Set your desired threshold for face detection.",
-    )
-    parser.add_argument(
         "--det_size",
         type=int,
-        default=512,
+        default=1024,
         help="The size for face detection model input",
     )
 
-    # Parse the arguments and return them
-    return parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 
 def make_test_dataset(args):
@@ -193,10 +207,8 @@ def preprocess_image(pil_image, device):
     return image
 
 
-def main():
-    # Parse the command-line arguments
-    args = parse_arguments()
-
+if __name__ == "__main__":
+    args = parse_args()
     accelerator = Accelerator()
 
     # Specify the device
@@ -207,23 +219,39 @@ def main():
         output_vis_dir = Path(args.output_dir, "vis")
         output_vis_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize the LDM Stable Diffusion pipeline
-    model_id = "runwayml/stable-diffusion-v1-5"
-    model_id = "/data/han-wei/models/stable-diffusion-v1-5"  # load local save of model (for internet problems)
+    generator = None
+    dtype = torch.float16
 
-    ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
-    ldm_stable.load_ip_adapter(
+    image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+        "h94/IP-Adapter", subfolder="models/image_encoder", torch_dtype=dtype
+    )
+
+    pipeline_class = (
+        StableDiffusionPipelineXL_LEDITS
+        if args.inversion == "leditspp"
+        else LEditsPPPipelineStableDiffusionXL
+    )
+    model_id = "stabilityai/stable-diffusion-xl-base-1.0"
+    pipe = pipeline_class.from_pretrained(
+        model_id,
+        image_encoder=image_encoder,
+        torch_dtype=dtype,
+    )
+    if args.inversion == "leditspp":
+        pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
+            model_id,
+            subfolder="scheduler",
+            algorithm_type="sde-dpmsolver++",
+            solver_order=2,
+        )
+    pipe = pipe.to("cuda")
+    pipe.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
-        weight_name="ip-adapter-faceid_sd15.bin",
+        weight_name="ip-adapter-faceid_sdxl.bin",
         image_encoder_folder=None,
     )
-    ldm_stable.set_ip_adapter_scale(args.ip_adapter_scale)
-    ldm_stable.scheduler = DDIMScheduler.from_config(model_id, subfolder="scheduler")
-    ldm_stable.scheduler.set_timesteps(args.num_diffusion_steps)
-
-    # Initialize the ToPILImage transform
-    to_pil = ToPILImage()
+    pipe.set_ip_adapter_scale(args.ip_adapter_scale)
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
@@ -257,57 +285,42 @@ def main():
                 save_to = Path(args.output_dir, filename)
 
                 if save_to.is_file():
-                    continue
+                    pass
 
                 try:
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
                         image_path=image_path,
                         scale_factor=args.id_emb_scale,
-                        dtype=torch.float32,
+                        dtype=dtype,
                         device=device,
                     )
                 except ValueError as e:
                     f.write(f"{e}\n")
                 else:
-                    # Preprocess the image
-                    x0 = preprocess_image(pil_image=image, device=device)
+                    if args.seed is not None:
+                        # create a generator for reproducibility; notice you don't place it on the GPU!
+                        generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
-                    # vae encode image
-                    w0 = (
-                        ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215
-                    ).float()
-
-                    wt, zs, wts = inversion_forward_process(
-                        ldm_stable,
-                        w0,
-                        etas=args.eta,
-                        prompt="",
-                        cfg_scale=args.guidance_scale,
-                        prog_bar=True,
-                        num_inference_steps=args.num_diffusion_steps,
+                    reconstructed_image = pipe.invert(
+                        image=image,
+                        num_inversion_steps=args.num_inversion_steps,
+                        skip=args.skip,
+                        source_guidance_scale=args.guidance_scale,
                         ip_adapter_image_embeds=[id_embs_inv],
-                    )
+                        generator=generator,
+                    ).vae_reconstruction_images[0]
 
-                    w0, _ = inversion_reverse_process(
-                        ldm_stable,
-                        xT=wts[args.num_diffusion_steps - args.skip],
-                        etas=args.eta,
-                        prompts=[""],
-                        cfg_scales=[args.guidance_scale],
-                        prog_bar=True,
-                        zs=zs[: (args.num_diffusion_steps - args.skip)],
-                        controller=None,
+                    pil_image = pipe(
+                        prompt="",
                         ip_adapter_image_embeds=[id_embs],
-                    )
+                        num_images_per_prompt=1,
+                        generator=generator,
+                        guidance_scale=args.guidance_scale,
+                        timesteps=pipe.scheduler.timesteps,
+                        latents=pipe.init_latents,
+                        num_inference_steps=args.num_inversion_steps,
+                    ).images[0]
 
-                    # vae decode image
-                    x0_dec = ldm_stable.vae.decode(1 / 0.18215 * w0).sample
-
-                    # The tensor values should be in the range [0, 1] for float tensors or [0, 255] for integer tensors.
-                    image_tensor = (x0_dec / 2 + 0.5).clamp(0, 1)[0]
-
-                    # Convert the tensor to a PIL image
-                    pil_image = to_pil(image_tensor)
                     pil_image.save(save_to)
 
                     if args.vis_input:
@@ -317,7 +330,3 @@ def main():
                                 [image, pil_image], rows=1, cols=2
                             )
                             combined_image.save(save_vis_to)
-
-
-if __name__ == "__main__":
-    main()

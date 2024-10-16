@@ -1,14 +1,11 @@
 import argparse
 
-import cv2
-import numpy as np
 import torch
-from diffusers.utils import load_image, make_image_grid
-from insightface.app import FaceAnalysis
 from PIL import Image
 from transformers import CLIPVisionModelWithProjection
 
 from custom_ip_adapter_loader import load_ip_adapter, set_ip_adapter_scale
+from face_embedding_utils import FaceEmbeddingExtractor
 from sdxl.diffusers.pipeline_stable_diffusion_xl import (
     StableDiffusionXLPipeline as LEditsPPPipelineStableDiffusionXL,
 )
@@ -76,33 +73,32 @@ def parse_args():
         "--resolution",
         type=int,
         default=1024,
+        help=("The resolution for output images."),
+    )
+    parser.add_argument(
+        "--det_thresh",
+        type=float,
+        default=0.1,
+        help="Set your desired threshold for face detection.",
+    )
+    parser.add_argument(
+        "--ip_adapter_scale",
+        type=float,
+        default="1.0",
         help=(
-            "The resolution for output images."
+            "Controls the amount of text or image conditioning to apply to the model."
+            "A value of 1.0 means the model is only conditioned on the image prompt."
         ),
+    )
+    parser.add_argument(
+        "--det_size",
+        type=int,
+        default=1024,
+        help="The size for face detection model input",
     )
 
     args = parser.parse_args()
     return args
-
-
-def extract_id_embeddings(image_path, id_emb_scale, dtype):
-    image = load_image(image_path)
-    ref_images_embeds = []
-    app = FaceAnalysis(
-        name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
-    )
-    app.prepare(ctx_id=0, det_size=(640, 640))
-    image = cv2.cvtColor(np.asarray(image), cv2.COLOR_BGR2RGB)
-    faces = app.get(image)
-    image = torch.from_numpy(faces[0].normed_embedding)
-    image = image * id_emb_scale
-    ref_images_embeds.append(image.unsqueeze(0))
-    ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
-    neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
-    id_embeds = torch.cat([neg_ref_images_embeds, ref_images_embeds]).to(
-        dtype=dtype, device="cuda"
-    )
-    return id_embeds
 
 
 if __name__ == "__main__":
@@ -136,14 +132,21 @@ if __name__ == "__main__":
         )
     pipe = pipe.to("cuda")
 
-    id_embeds = extract_id_embeddings(args.input_image, args.id_emb_scale, dtype)
+    # Initialize FaceEmbeddingExtractor instance
+    extractor = FaceEmbeddingExtractor(
+        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
+    )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
+
+    id_embs_inv, id_embs = extractor.get_face_embeddings(
+        args.input_image, args.id_emb_scale, dtype
+    )
     pipe.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
         weight_name="ip-adapter-faceid_sdxl.bin",
         image_encoder_folder=None,
     )
-    pipe.set_ip_adapter_scale(1.0)
+    pipe.set_ip_adapter_scale(args.ip_adapter_scale)
 
     generator = torch.Generator(device="cpu").manual_seed(42)
 
@@ -152,13 +155,13 @@ if __name__ == "__main__":
         num_inversion_steps=args.num_inversion_steps,
         skip=args.skip,
         source_guidance_scale=args.guidance_scale,
-        ip_adapter_image_embeds=[id_embeds],
+        ip_adapter_image_embeds=[id_embs_inv],
         generator=generator,
     ).vae_reconstruction_images[0]
 
     image = pipe(
         prompt="",
-        ip_adapter_image_embeds=[id_embeds],
+        ip_adapter_image_embeds=[id_embs],
         num_images_per_prompt=1,
         generator=generator,
         guidance_scale=args.guidance_scale,
@@ -166,7 +169,6 @@ if __name__ == "__main__":
         latents=pipe.init_latents,
         num_inference_steps=args.num_inversion_steps,
     ).images[0]
-    image = image.resize((args.resolution, args.resolution), Image.Resampling.LANCZOS)
 
     id_emb_scale = (
         args.id_emb_scale + 1.0 if args.shift_neg_id_emb_scale else args.id_emb_scale

@@ -1,12 +1,8 @@
 import argparse
 from pathlib import Path
 
-import cv2
-import numpy as np
 import torch
 from diffusers import DDIMScheduler, StableDiffusionPipeline
-from diffusers.utils import load_image
-from insightface.app import FaceAnalysis
 from torch import autocast, inference_mode
 from tqdm import tqdm
 
@@ -27,32 +23,11 @@ from prompt_to_prompt.ptp_classes import (
 )
 from prompt_to_prompt.ptp_utils import register_attention_control, text2image_ldm_stable
 
-
-def extract_id_embeddings(image_path, id_emb_scale):
-    image = load_image(image_path)
-    ref_images_embeds = []
-    app = FaceAnalysis(
-        name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
-    )
-    app.prepare(ctx_id=0, det_size=(640, 640))
-    image = cv2.cvtColor(np.asarray(image), cv2.COLOR_BGR2RGB)
-    faces = app.get(image)
-    image = torch.from_numpy(faces[0].normed_embedding)
-    image = image * id_emb_scale
-    ref_images_embeds.append(image.unsqueeze(0))
-    ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
-    neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
-    id_embeds = torch.cat([neg_ref_images_embeds, ref_images_embeds]).to(
-        dtype=torch.float32, device="cuda"
-    )
-    return id_embeds
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device_num", type=int, default=0)
-    parser.add_argument("--cfg_src", type=float, default=3.5)
-    parser.add_argument("--cfg_tar", type=float, default=15)
+    parser.add_argument("--cfg_src", type=float, default=7.0)
+    parser.add_argument("--cfg_tar", type=float, default=7.0)
     parser.add_argument("--num_diffusion_steps", type=int, default=100)
     parser.add_argument("--dataset_yaml", default="test.yaml")
     parser.add_argument("--eta", type=float, default=1)
@@ -74,8 +49,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--id_emb_scale",
         type=float,
-        default=1.0,
-        help="Scale for the identity embedding. The default value is 1.0.",
+        default=-1.0,
+        help="Scaling factor for the identity embedding, with a default value of -1.0 for anonymization purposes.",
     )
     parser.add_argument(
         "--shift_neg_id_emb_scale",
@@ -97,8 +72,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--det_thresh",
         type=float,
-        default=0.25,
+        default=0.1,
         help="Set your desired threshold for face detection.",
+    )
+    parser.add_argument(
+        "--det_size",
+        type=int,
+        default=512,
+        help="The size for face detection model input",
     )
 
     args = parser.parse_args()
@@ -129,7 +110,7 @@ if __name__ == "__main__":
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
-        ctx_id=0, det_thresh=args.det_thresh, det_size=(640, 640)
+        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     # Open the output file in write mode
@@ -147,7 +128,7 @@ if __name__ == "__main__":
 
             # Extract embedding for the largest face with scaling
             try:
-                id_embeds = extractor.get_face_embeddings(
+                id_embs_inv, id_embs = extractor.get_face_embeddings(
                     image_path=image_path,
                     scale_factor=args.id_emb_scale,
                     dtype=torch.float32,
@@ -195,7 +176,7 @@ if __name__ == "__main__":
                         cfg_scale=cfg_scale_src,
                         prog_bar=True,
                         num_inference_steps=args.num_diffusion_steps,
-                        ip_adapter_image_embeds=[id_embeds],
+                        ip_adapter_image_embeds=[id_embs_inv],
                     )
 
                 # iterate over decoder prompts
@@ -223,7 +204,7 @@ if __name__ == "__main__":
                                     prog_bar=True,
                                     zs=zs[: (args.num_diffusion_steps - skip)],
                                     controller=controller,
-                                    ip_adapter_image_embeds=[id_embeds],
+                                    ip_adapter_image_embeds=[id_embs],
                                 )
 
                             elif args.mode == "p2pinv":
@@ -258,7 +239,7 @@ if __name__ == "__main__":
                                     prog_bar=True,
                                     zs=zs[: (args.num_diffusion_steps - skip)],
                                     controller=controller,
-                                    ip_adapter_image_embeds=[id_embeds],
+                                    ip_adapter_image_embeds=[id_embs],
                                 )
                                 w0 = w0[1].unsqueeze(0)
 

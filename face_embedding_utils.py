@@ -39,7 +39,8 @@ class FaceEmbeddingExtractor:
         device (str or torch.device): The device on which to place the resulting embedding.
 
         Returns:
-        concatenated_embedding (torch.Tensor): The embedding of the largest detected face, or None if no face is detected.
+        concat_emb_inv (torch.Tensor): The embedding of the largest detected face for performing inversion
+        concat_emb (torch.Tensor): The embedding of the largest detected face
         """
 
         # Load image
@@ -70,8 +71,11 @@ class FaceEmbeddingExtractor:
         ref_images_embeds.append(scaled_embedding.unsqueeze(0))
         ref_images_embeds = torch.stack(ref_images_embeds, dim=0).unsqueeze(0)
         neg_ref_images_embeds = torch.zeros_like(ref_images_embeds)
-        concatenated_embedding = torch.cat(
+        concat_emb_inv = torch.cat(
+            [neg_ref_images_embeds, neg_ref_images_embeds]
+        ).to(dtype=dtype, device=device)
+        concat_emb = torch.cat(
             [neg_ref_images_embeds, ref_images_embeds]
         ).to(dtype=dtype, device=device)
 
-        return concatenated_embedding
+        return concat_emb_inv, concat_emb

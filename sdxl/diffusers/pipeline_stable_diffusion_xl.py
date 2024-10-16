@@ -1330,7 +1330,7 @@ class StableDiffusionXLPipeline(
                 "Consider down-sampling the input using the `height` and `width` parameters"
             )
         image = image.to(self.device, dtype=dtype)
-        needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
+        needs_upcasting = (image.dtype == torch.float16 or self.vae.dtype == torch.float16) and self.vae.config.force_upcast
 
         if needs_upcasting:
             image = image.float()
@@ -1434,8 +1434,8 @@ class StableDiffusionXLPipeline(
 
         # 1. prepare image
         x0, resized = self.vae_encode_image(image, dtype=self.text_encoder_2.dtype)
-        width = x0.shape[2] * self.vae_scale_factor
-        height = x0.shape[3] * self.vae_scale_factor
+        height = x0.shape[2] * self.vae_scale_factor
+        width = x0.shape[3] * self.vae_scale_factor
         self.size = (height, width)
 
         self.batch_size = x0.shape[0]
