@@ -49,7 +49,7 @@ def sample_xts_from_x0(model, x0, num_inference_steps=50):
     
     timesteps = model.scheduler.timesteps.to(model.device)
     t_to_idx = {int(v):k for k,v in enumerate(timesteps)}
-    xts = torch.zeros((num_inference_steps+1,model.unet.in_channels, model.unet.sample_size, model.unet.sample_size)).to(x0.device)
+    xts = torch.zeros((num_inference_steps+1,model.unet.in_channels, model.unet.sample_size, model.unet.sample_size)).to(dtype=x0.dtype, device=x0.device)
     xts[0] = x0
     for t in reversed(timesteps):
         idx = num_inference_steps-t_to_idx[int(t)]
@@ -129,7 +129,7 @@ def inversion_forward_process(model, x0,
         if type(etas) in [int, float]: etas = [etas]*model.scheduler.num_inference_steps
         xts = sample_xts_from_x0(model, x0, num_inference_steps=num_inference_steps)
         alpha_bar = model.scheduler.alphas_cumprod
-        zs = torch.zeros(size=variance_noise_shape, device=model.device)
+        zs = torch.zeros(size=variance_noise_shape, dtype=model.dtype, device=model.device)
     t_to_idx = {int(v):k for k,v in enumerate(timesteps)}
     xt = x0
     # op = tqdm(reversed(timesteps)) if prog_bar else reversed(timesteps)
@@ -227,7 +227,7 @@ def reverse_step(model, model_output, timestep, sample, eta = 0, variance_noise=
     # 8. Add noice if eta > 0
     if eta > 0:
         if variance_noise is None:
-            variance_noise = torch.randn(model_output.shape, device=model.device)
+            variance_noise = torch.randn(model_output.shape, dtype=model.dtype, device=model.device)
         sigma_z =  eta * variance ** (0.5) * variance_noise
         prev_sample = prev_sample + sigma_z
 
@@ -248,7 +248,7 @@ def inversion_reverse_process(model,
 
     batch_size = len(prompts)
 
-    cfg_scales_tensor = torch.Tensor(cfg_scales).view(-1,1,1,1).to(model.device)
+    cfg_scales_tensor = torch.Tensor(cfg_scales).view(-1,1,1,1).to(dtype=model.dtype, device=model.device)
 
     text_embeddings = encode_text(model, prompts)
     uncond_embedding = encode_text(model, [""] * batch_size)

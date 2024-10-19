@@ -170,7 +170,7 @@ def collate_fn(examples):
     }
 
 
-def preprocess_image(pil_image, device):
+def preprocess_image(pil_image, dtype, device):
     """
     Preprocess a PIL image for PyTorch model input.
 
@@ -188,7 +188,7 @@ def preprocess_image(pil_image, device):
     image = torch.from_numpy(image).float() / 127.5 - 1
 
     # Permute dimensions to (C, H, W) and add a batch dimension
-    image = image.permute(2, 0, 1).unsqueeze(0).to(device)
+    image = image.permute(2, 0, 1).unsqueeze(0).to(dtype=dtype, device=device)
 
     return image
 
@@ -211,7 +211,7 @@ def main():
     model_id = "runwayml/stable-diffusion-v1-5"
     model_id = "/data/han-wei/models/stable-diffusion-v1-5"  # load local save of model (for internet problems)
 
-    ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
+    ldm_stable = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16).to(device)
     ldm_stable.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
@@ -221,6 +221,7 @@ def main():
     ldm_stable.set_ip_adapter_scale(args.ip_adapter_scale)
     ldm_stable.scheduler = DDIMScheduler.from_config(model_id, subfolder="scheduler")
     ldm_stable.scheduler.set_timesteps(args.num_diffusion_steps)
+    dtype = ldm_stable.dtype
 
     # Initialize the ToPILImage transform
     to_pil = ToPILImage()
@@ -263,19 +264,19 @@ def main():
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
                         image_path=image_path,
                         scale_factor=args.id_emb_scale,
-                        dtype=torch.float32,
+                        dtype=dtype,
                         device=device,
                     )
                 except ValueError as e:
                     f.write(f"{e}\n")
                 else:
                     # Preprocess the image
-                    x0 = preprocess_image(pil_image=image, device=device)
+                    x0 = preprocess_image(pil_image=image, dtype=dtype, device=device)
 
                     # vae encode image
                     w0 = (
                         ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215
-                    ).float()
+                    ).to(dtype=dtype)
 
                     wt, zs, wts = inversion_forward_process(
                         ldm_stable,
