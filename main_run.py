@@ -2,7 +2,13 @@ import argparse
 from pathlib import Path
 
 import torch
-from diffusers import DDIMScheduler, StableDiffusionPipeline
+from diffusers import (
+    DDIMScheduler,
+    StableDiffusionInpaintPipeline,
+    StableDiffusionPipeline,
+)
+from diffusers.utils import load_image
+from PIL import Image
 from torch import autocast, inference_mode
 from tqdm import tqdm
 
@@ -99,7 +105,9 @@ if __name__ == "__main__":
     xa_sa_string = f"_xa_{args.xa}_sa{args.sa}_" if args.mode == "p2pinv" else "_"
 
     # load/reload model:
-    ldm_stable = StableDiffusionPipeline.from_pretrained(model_id).to(device)
+    ldm_stable = StableDiffusionInpaintPipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16
+    ).to(device)
     ldm_stable.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
@@ -107,6 +115,7 @@ if __name__ == "__main__":
         image_encoder_folder=None,
     )
     ldm_stable.set_ip_adapter_scale(args.ip_adapter_scale)
+    dtype = ldm_stable.dtype
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
@@ -117,7 +126,9 @@ if __name__ == "__main__":
     with open(args.output_file, "w") as f:
         for i in tqdm(range(len(full_data))):
             current_image_data = full_data[i]
-            image_path = current_image_data["init_img"]
+            source_image_path = current_image_data["source_image"]
+            target_image_path = current_image_data["target_image"]
+            mask_image_path = current_image_data["mask_image"]
             prompt_src = current_image_data.get(
                 "source_prompt", ""
             )  # default empty string
@@ -129,9 +140,9 @@ if __name__ == "__main__":
             # Extract embedding for the largest face with scaling
             try:
                 id_embs_inv, id_embs = extractor.get_face_embeddings(
-                    image_path=image_path,
+                    image_path=source_image_path,
                     scale_factor=args.id_emb_scale,
-                    dtype=torch.float32,
+                    dtype=dtype,
                     device=device,
                 )
             except ValueError as e:
@@ -156,13 +167,24 @@ if __name__ == "__main__":
 
                 # load image
                 offsets = (0, 0, 0, 0)
-                x0 = load_512(image_path, *offsets, device)
+                x0 = load_512(target_image_path, *offsets, device).to(dtype=dtype)
+
+                # Check if the target mask path exists. If it does, load the mask image.
+                # Otherwise, create a new black image with the same size as the target image.
+                if Path(mask_image_path).exists():
+                    mask_image = load_image(mask_image_path)
+                else:
+                    print(f"Error: The file '{mask_image_path}' was not found.")
+                    # width and height are the dimensions of the target image
+                    height, width = x0.shape[-2:]
+                    # Create a new image with a white background
+                    mask_image = Image.new("RGB", (width, height), "white")
 
                 # vae encode image
                 with autocast("cuda"), inference_mode():
-                    w0 = (
-                        ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215
-                    ).float()
+                    w0 = (ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215).to(
+                        dtype=dtype
+                    )
 
                 # find Zs and wts - forward process
                 if args.mode == "p2pddim" or args.mode == "ddim":
@@ -205,6 +227,8 @@ if __name__ == "__main__":
                                     zs=zs[: (args.num_diffusion_steps - skip)],
                                     controller=controller,
                                     ip_adapter_image_embeds=[id_embs],
+                                    init_image=x0,
+                                    mask_image=mask_image,
                                 )
 
                             elif args.mode == "p2pinv":
@@ -301,7 +325,7 @@ if __name__ == "__main__":
 
                             # Replace dots with underscores.
                             # Format cfg to have at least 4 characters in total, including one digit after the decimal point, and pad it with leading zeros if necessary.
-                            filename_wo_ext = f"{Path(image_path).stem}-cfg-tar-{shifted_cfg_scale_tar:04.1f}-skip-{skip}-id-{id_emb_scale}".replace(
+                            filename_wo_ext = f"{Path(source_image_path).stem}-{Path(target_image_path).stem}-cfg-tar-{shifted_cfg_scale_tar:04.1f}-skip-{skip}-id-{id_emb_scale}".replace(
                                 ".", "_"
                             )
 

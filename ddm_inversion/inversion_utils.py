@@ -244,7 +244,16 @@ def inversion_reverse_process(model,
                     asyrp = False,
                     ip_adapter_image: Optional[PipelineImageInput] = None,
                     ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
+                    init_image: Optional[torch.Tensor] = None,
+                    mask_image: PipelineImageInput = None,
+                    generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
                     ):
+
+    # Define call parameters
+    height, width = init_image.shape[-2:]
+    do_classifier_free_guidance = prompts!=None
+    device = model._execution_device
+    num_images_per_prompt = 1
 
     batch_size = len(prompts)
 
@@ -263,6 +272,30 @@ def inversion_reverse_process(model,
 
     t_to_idx = {int(v):k for k,v in enumerate(timesteps[-zs.shape[0]:])}
 
+    # Prepare mask latent variables
+    mask_condition = model.mask_processor.preprocess(
+        mask_image, height=height, width=width, resize_mode="default", crops_coords=None
+    ).to(device=device)
+
+    masked_image = init_image * (mask_condition < 0.5)
+
+    mask, masked_image_latents = model.prepare_mask_latents(
+        mask_condition,
+        masked_image,
+        batch_size * num_images_per_prompt,
+        height,
+        width,
+        model.dtype,
+        device,
+        generator,
+        do_classifier_free_guidance,
+    )
+    if do_classifier_free_guidance:
+        init_mask, _ = mask.chunk(2)
+    else:
+        init_mask = mask
+
+    # Add image embeds for IP-Adapter
     if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
         image_embeds = prepare_ip_adapter_image_embeds(
             model=model,
@@ -299,6 +332,7 @@ def inversion_reverse_process(model,
         if prompts:
             ## classifier free guidance
             noise_pred = uncond_out.sample + cfg_scales_tensor * (cond_out.sample - uncond_out.sample)
+            noise_pred = (1 - init_mask) *  uncond_out.sample + init_mask * noise_pred
         else: 
             noise_pred = uncond_out.sample
         # 2. compute less noisy image and set x_t -> x_t-1  
