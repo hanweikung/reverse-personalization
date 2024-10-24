@@ -19,7 +19,7 @@ from ddm_inversion.inversion_utils import (
     inversion_reverse_process,
 )
 from ddm_inversion.utils import dataset_from_yaml, image_grid
-from face_embedding_utils import FaceEmbeddingExtractor
+from utils.face_embedding import FaceEmbeddingExtractor
 from prompt_to_prompt.ptp_classes import (
     AttentionRefine,
     AttentionReplace,

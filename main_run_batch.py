@@ -20,7 +20,7 @@ from ddm_inversion.inversion_utils import (
     inversion_forward_process,
     inversion_reverse_process,
 )
-from face_embedding_utils import FaceEmbeddingExtractor
+from utils.face_embedding import FaceEmbeddingExtractor
 
 
 def parse_arguments():

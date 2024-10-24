@@ -12,7 +12,7 @@ from tqdm import tqdm
 from transformers import CLIPVisionModelWithProjection
 
 from custom_ip_adapter_loader import load_ip_adapter, set_ip_adapter_scale
-from face_embedding_utils import FaceEmbeddingExtractor
+from utils.face_embedding import FaceEmbeddingExtractor
 from sdxl.diffusers.pipeline_stable_diffusion_xl import (
     StableDiffusionXLPipeline as LEditsPPPipelineStableDiffusionXL,
 )
