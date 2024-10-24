@@ -48,6 +48,7 @@ _LICENSE = ""
 _URLS = {
     "metadata_path": "/path/to/metadata.jsonl",
     "images_dir": "/path/to/dataset-name",
+    "mask_images_dir": "/path/to/dataset-name",
 }
 
 
@@ -61,8 +62,12 @@ class NewDataset(datasets.GeneratorBasedBuilder):
         # TODO: This method specifies the datasets.DatasetInfo object which contains informations and typings for the dataset
         features = datasets.Features(
             {
-                "image": datasets.Image(),
-                "image_path": datasets.Value("string"),
+                "source_image": datasets.Image(),
+                "target_image": datasets.Image(),
+                "mask_image": datasets.Image(),
+                "source_image_path": datasets.Value("string"),
+                "target_image_path": datasets.Value("string"),
+                "mask_image_path": datasets.Value("string"),
             }
         )
 
@@ -87,6 +92,7 @@ class NewDataset(datasets.GeneratorBasedBuilder):
         # If several configurations are possible (listed in BUILDER_CONFIGS), the configuration selected by the user is in self.config.name
         metadata_path = _URLS["metadata_path"]
         images_dir = _URLS["images_dir"]
+        mask_images_dir = _URLS["mask_images_dir"]
         return [
             datasets.SplitGenerator(
                 name=datasets.Split.TEST,
@@ -94,28 +100,47 @@ class NewDataset(datasets.GeneratorBasedBuilder):
                 gen_kwargs={
                     "metadata_path": metadata_path,
                     "images_dir": images_dir,
+                    "mask_images_dir": mask_images_dir,
                 },
             ),
         ]
 
     # method parameters are unpacked from `gen_kwargs` as given in `_split_generators`
-    def _generate_examples(self, metadata_path, images_dir):
+    def _generate_examples(self, metadata_path, images_dir, mask_images_dir):
         # TODO: This method handles input defined in _split_generators to yield (key, example) tuples from the dataset.
         # The `key` is for legacy reasons (tfds) and is not important in itself, but must be unique for each example.
         metadata = pd.read_json(metadata_path, lines=True)
 
         for _, row in metadata.iterrows():
-            image_name = row["image"]
-            image_path = os.path.join(images_dir, image_name)
-            image = open(image_path, "rb").read()
+            source_image_path = row["source_image"]
+            source_image_path = os.path.join(images_dir, source_image_path)
+            source_image = open(source_image_path, "rb").read()
+
+            target_image_path = row["target_image"]
+            target_image_path = os.path.join(images_dir, target_image_path)
+            target_image = open(target_image_path, "rb").read()
+
+            mask_image_path = row["mask_image"]
+            mask_image_path = os.path.join(mask_images_dir, mask_image_path)
+            mask_image = open(mask_image_path, "rb").read()
 
             yield (
-                image_path,
+                "-".join([source_image_path, target_image_path, mask_image_path]),
                 {
-                    "image": {
-                        "path": image_path,
-                        "bytes": image,
+                    "source_image": {
+                        "path": source_image_path,
+                        "bytes": source_image,
                     },
-                    "image_path": image_path,
+                    "target_image": {
+                        "path": target_image_path,
+                        "bytes": target_image,
+                    },
+                    "mask_image": {
+                        "path": mask_image_path,
+                        "bytes": mask_image,
+                    },
+                    "source_image_path": source_image_path,
+                    "target_image_path": target_image_path,
+                    "mask_image_path": mask_image_path,
                 },
             )

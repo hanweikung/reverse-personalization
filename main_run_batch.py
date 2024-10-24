@@ -7,7 +7,11 @@ import torch
 import torchvision.transforms.v2 as transforms_v2
 from accelerate import Accelerator
 from datasets import load_dataset
-from diffusers import DDIMScheduler, StableDiffusionPipeline
+from diffusers import (
+    DDIMScheduler,
+    StableDiffusionPipeline,
+    StableDiffusionInpaintPipeline,
+)
 from diffusers.utils import make_image_grid
 from torchvision.transforms.v2 import ToPILImage
 from tqdm import tqdm
@@ -145,10 +149,16 @@ def make_test_dataset(args):
     )
 
     def preprocess_test(examples):
-        images = [image.convert("RGB") for image in examples["image"]]
-        images = [image_transforms(image) for image in images]
+        source_images = [image.convert("RGB") for image in examples["source_image"]]
+        source_images = [image_transforms(image) for image in source_images]
+        target_images = [image.convert("RGB") for image in examples["target_image"]]
+        target_images = [image_transforms(image) for image in target_images]
+        mask_images = [image.convert("RGB") for image in examples["mask_image"]]
+        mask_images = [image_transforms(image) for image in mask_images]
 
-        examples["image"] = images
+        examples["source_image"] = source_images
+        examples["target_image"] = target_images
+        examples["mask_image"] = mask_images
 
         return examples
 
@@ -161,12 +171,20 @@ def make_test_dataset(args):
 
 
 def collate_fn(examples):
-    images = [example["image"] for example in examples]
-    image_paths = [example["image_path"] for example in examples]
+    source_images = [example["source_image"] for example in examples]
+    target_images = [example["target_image"] for example in examples]
+    mask_images = [example["mask_image"] for example in examples]
+    source_image_paths = [example["source_image_path"] for example in examples]
+    target_image_paths = [example["target_image_path"] for example in examples]
+    mask_image_paths = [example["mask_image_path"] for example in examples]
 
     return {
-        "images": images,
-        "image_paths": image_paths,
+        "source_images": source_images,
+        "source_image_paths": source_image_paths,
+        "target_images": target_images,
+        "target_image_paths": target_image_paths,
+        "mask_images": mask_images,
+        "mask_image_paths": mask_image_paths,
     }
 
 
@@ -211,7 +229,9 @@ def main():
     model_id = "runwayml/stable-diffusion-v1-5"
     model_id = "/data/han-wei/models/stable-diffusion-v1-5"  # load local save of model (for internet problems)
 
-    ldm_stable = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16).to(device)
+    ldm_stable = StableDiffusionInpaintPipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16
+    ).to(device)
     ldm_stable.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
@@ -248,13 +268,26 @@ def main():
             # Group corresponding items from each key together
             grouped_items = list(
                 zip(
-                    batch["images"],
-                    batch["image_paths"],
+                    batch["source_images"],
+                    batch["source_image_paths"],
+                    batch["target_images"],
+                    batch["target_image_paths"],
+                    batch["mask_images"],
+                    batch["mask_image_paths"],
                 )
             )
 
-            for image, image_path in grouped_items:
-                filename = f"{Path(image_path).stem}.png"
+            for (
+                source_image,
+                source_image_path,
+                target_image,
+                target_image_path,
+                mask_image,
+                mask_image_path,
+            ) in grouped_items:
+                filename = (
+                    f"{Path(source_image_path).stem}-{Path(target_image_path).stem}.png"
+                )
                 save_to = Path(args.output_dir, filename)
 
                 if save_to.is_file():
@@ -262,7 +295,7 @@ def main():
 
                 try:
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
-                        image_path=image_path,
+                        image_path=source_image_path,
                         scale_factor=args.id_emb_scale,
                         dtype=dtype,
                         device=device,
@@ -271,12 +304,14 @@ def main():
                     f.write(f"{e}\n")
                 else:
                     # Preprocess the image
-                    x0 = preprocess_image(pil_image=image, dtype=dtype, device=device)
+                    x0 = preprocess_image(
+                        pil_image=target_image, dtype=dtype, device=device
+                    )
 
                     # vae encode image
-                    w0 = (
-                        ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215
-                    ).to(dtype=dtype)
+                    w0 = (ldm_stable.vae.encode(x0).latent_dist.mode() * 0.18215).to(
+                        dtype=dtype
+                    )
 
                     wt, zs, wts = inversion_forward_process(
                         ldm_stable,
@@ -299,6 +334,8 @@ def main():
                         zs=zs[: (args.num_diffusion_steps - args.skip)],
                         controller=None,
                         ip_adapter_image_embeds=[id_embs],
+                        init_image=x0,
+                        mask_image=mask_image,
                     )
 
                     # vae decode image
@@ -314,9 +351,18 @@ def main():
                     if args.vis_input:
                         save_vis_to = Path(output_vis_dir, filename)
                         if not save_vis_to.is_file():
-                            combined_image = make_image_grid(
-                                [image, pil_image], rows=1, cols=2
-                            )
+                            if source_image_path == target_image_path:
+                                # face anonymization
+                                combined_image = make_image_grid(
+                                    [target_image, pil_image], rows=1, cols=2
+                                )
+                            else:
+                                # face swapping
+                                combined_image = make_image_grid(
+                                    [source_image, target_image, pil_image],
+                                    rows=1,
+                                    cols=3,
+                                )
                             combined_image.save(save_vis_to)
 
 
