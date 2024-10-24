@@ -87,6 +87,9 @@ if __name__ == "__main__":
         default=512,
         help="The size for face detection model input",
     )
+    parser.add_argument(
+        "--seed", type=int, default=0, help="A seed for reproducible inference."
+    )
 
     args = parser.parse_args()
     full_data = dataset_from_yaml(args.dataset_yaml)
@@ -212,6 +215,7 @@ if __name__ == "__main__":
 
                     for cfg_scale_tar in cfg_scale_tar_list:
                         for skip in skip_zs:
+                            generator = torch.manual_seed(args.seed)
                             if args.mode == "our_inv":
                                 # reverse process (via Zs and wT)
                                 # controller = AttentionStore()
@@ -229,6 +233,7 @@ if __name__ == "__main__":
                                     ip_adapter_image_embeds=[id_embs],
                                     init_image=x0,
                                     mask_image=mask_image,
+                                    generator=generator,
                                 )
 
                             elif args.mode == "p2pinv":

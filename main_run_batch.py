@@ -126,6 +126,9 @@ def parse_arguments():
         default=512,
         help="The size for face detection model input",
     )
+    parser.add_argument(
+        "--seed", type=int, default=0, help="A seed for reproducible inference."
+    )
 
     # Parse the arguments and return them
     return parser.parse_args()
@@ -324,6 +327,7 @@ def main():
                         ip_adapter_image_embeds=[id_embs_inv],
                     )
 
+                    generator = torch.manual_seed(args.seed)
                     w0, _ = inversion_reverse_process(
                         ldm_stable,
                         xT=wts[args.num_diffusion_steps - args.skip],
@@ -336,6 +340,7 @@ def main():
                         ip_adapter_image_embeds=[id_embs],
                         init_image=x0,
                         mask_image=mask_image,
+                        generator=generator,
                     )
 
                     # vae decode image
