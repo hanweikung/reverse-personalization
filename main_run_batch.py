@@ -129,6 +129,12 @@ def parse_arguments():
     parser.add_argument(
         "--seed", type=int, default=0, help="A seed for reproducible inference."
     )
+    parser.add_argument(
+        "--max_angle",
+        type=float,
+        default=0.0,
+        help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
+    )
 
     # Parse the arguments and return them
     return parser.parse_args()
@@ -296,9 +302,13 @@ def main():
                 if save_to.is_file():
                     continue
 
+                do_anonymization = source_image_path == target_image_path
                 try:
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
                         image_path=source_image_path,
+                        max_angle=args.max_angle,
+                        is_opposite=do_anonymization,
+                        seed=args.seed,
                         scale_factor=args.id_emb_scale,
                         dtype=dtype,
                         device=device,
@@ -356,7 +366,7 @@ def main():
                     if args.vis_input:
                         save_vis_to = Path(output_vis_dir, filename)
                         if not save_vis_to.is_file():
-                            if source_image_path == target_image_path:
+                            if do_anonymization:
                                 # face anonymization
                                 combined_image = make_image_grid(
                                     [target_image, pil_image], rows=1, cols=2

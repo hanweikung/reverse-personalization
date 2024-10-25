@@ -5,12 +5,16 @@ export TORCH_DISTRIBUTED_DEBUG="INFO"
 
 # CUDA_VISIBLE_DEVICES=0 python -m main_run_batch \
 accelerate launch --multi_gpu -m main_run_batch \
-	--dataset_loading_script_path=$DATASET_LOADING_SCRIPT_PATH --center_crop \
+	--dataset_loading_script_path=$DATASET_LOADING_SCRIPT_PATH \
+	--center_crop \
 	--output_dir $OUTPUT_DIR \
 	--max_test_samples "1000" \
 	--guidance_scale "7.0" \
 	--skip "70" \
 	--ip_adapter_scale "1.0" \
-	--id_emb_scale "-1.0" \
+	--id_emb_scale "1.0" \
 	--det_size "640" \
+	--det_thresh "0.1" \
+	--seed "0" \
+	--max_angle "30.0" \
 	--vis_input

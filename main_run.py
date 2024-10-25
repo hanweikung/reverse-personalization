@@ -90,6 +90,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed", type=int, default=0, help="A seed for reproducible inference."
     )
+    parser.add_argument(
+        "--max_angle",
+        type=float,
+        default=0.0,
+        help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
+    )
 
     args = parser.parse_args()
     full_data = dataset_from_yaml(args.dataset_yaml)
@@ -140,10 +146,14 @@ if __name__ == "__main__":
             prompt_src = ""
             prompt_tar_list = [""]
 
+            do_anonymization = source_image_path == target_image_path
             # Extract embedding for the largest face with scaling
             try:
                 id_embs_inv, id_embs = extractor.get_face_embeddings(
                     image_path=source_image_path,
+                    max_angle=args.max_angle,
+                    is_opposite=do_anonymization,
+                    seed=args.seed,
                     scale_factor=args.id_emb_scale,
                     dtype=dtype,
                     device=device,
@@ -174,7 +184,7 @@ if __name__ == "__main__":
 
                 # Check if the target mask path exists. If it does, load the mask image.
                 # Otherwise, create a new black image with the same size as the target image.
-                if Path(mask_image_path).exists():
+                if mask_image_path and Path(mask_image_path).is_file():
                     mask_image = load_image(mask_image_path)
                 else:
                     print(f"Error: The file '{mask_image_path}' was not found.")
