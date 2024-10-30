@@ -96,6 +96,12 @@ if __name__ == "__main__":
         default=0.0,
         help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
     )
+    parser.add_argument(
+        "--mask_delay_steps",
+        type=int,
+        default=0,
+        help="The number of diffusion steps to wait before applying the mask.",
+    )
 
     args = parser.parse_args()
     full_data = dataset_from_yaml(args.dataset_yaml)
@@ -244,6 +250,7 @@ if __name__ == "__main__":
                                     init_image=x0,
                                     mask_image=mask_image,
                                     generator=generator,
+                                    mask_delay_steps=args.mask_delay_steps,
                                 )
 
                             elif args.mode == "p2pinv":

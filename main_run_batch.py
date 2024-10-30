@@ -135,6 +135,12 @@ def parse_arguments():
         default=0.0,
         help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
     )
+    parser.add_argument(
+        "--mask_delay_steps",
+        type=int,
+        default=0,
+        help="The number of diffusion steps to wait before applying the mask.",
+    )
 
     # Parse the arguments and return them
     return parser.parse_args()
@@ -351,6 +357,7 @@ def main():
                         init_image=x0,
                         mask_image=mask_image,
                         generator=generator,
+                        mask_delay_steps=args.mask_delay_steps,
                     )
 
                     # vae decode image

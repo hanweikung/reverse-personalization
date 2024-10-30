@@ -247,6 +247,7 @@ def inversion_reverse_process(model,
                     init_image: Optional[torch.Tensor] = None,
                     mask_image: PipelineImageInput = None,
                     generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+                    mask_delay_steps = 0,
                     ):
 
     # Define call parameters
@@ -332,7 +333,8 @@ def inversion_reverse_process(model,
         if prompts:
             ## classifier free guidance
             noise_pred = uncond_out.sample + cfg_scales_tensor * (cond_out.sample - uncond_out.sample)
-            noise_pred = (1 - init_mask) *  uncond_out.sample + init_mask * noise_pred
+            if t_to_idx[int(t)] >= mask_delay_steps:
+                noise_pred = (1 - init_mask) *  uncond_out.sample + init_mask * noise_pred
         else: 
             noise_pred = uncond_out.sample
         # 2. compute less noisy image and set x_t -> x_t-1  
