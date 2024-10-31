@@ -31,6 +31,12 @@ from prompt_to_prompt.ptp_utils import register_attention_control, text2image_ld
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--sd_model_path",
+        type=str,
+        default="stable-diffusion-v1-5/stable-diffusion-v1-5",
+        help="Path to the Stable Diffusion 1.5 model",
+    )
     parser.add_argument("--device_num", type=int, default=0)
     parser.add_argument("--cfg_src", type=float, default=7.0)
     parser.add_argument("--cfg_tar", type=float, default=7.0)
@@ -108,8 +114,7 @@ if __name__ == "__main__":
 
     # create scheduler
     # load diffusion model
-    model_id = "runwayml/stable-diffusion-v1-5"
-    model_id = "/data/han-wei/models/stable-diffusion-v1-5"  # load local save of model (for internet problems)
+    sd_model_path = args.sd_model_path
 
     device = f"cuda:{args.device_num}"
 
@@ -121,7 +126,7 @@ if __name__ == "__main__":
 
     # load/reload model:
     ldm_stable = StableDiffusionInpaintPipeline.from_pretrained(
-        model_id, torch_dtype=torch.float16
+        sd_model_path, torch_dtype=torch.float16
     ).to(device)
     ldm_stable.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
@@ -179,7 +184,7 @@ if __name__ == "__main__":
                     ldm_stable.scheduler = scheduler
                 else:
                     ldm_stable.scheduler = DDIMScheduler.from_config(
-                        model_id, subfolder="scheduler"
+                        sd_model_path, subfolder="scheduler"
                     )
 
                 ldm_stable.scheduler.set_timesteps(args.num_diffusion_steps)
