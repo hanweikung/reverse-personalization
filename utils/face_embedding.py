@@ -11,7 +11,9 @@ class FaceEmbeddingExtractor:
     A class to extract identity embeddings of the largest face from an image using InsightFace.
     """
 
-    def __init__(self, ctx_id=0, det_thresh=0.5, det_size=(640, 640)):
+    def __init__(
+        self, ctx_id=0, det_thresh=0.5, det_size=(640, 640), model_path="~/.insightface"
+    ):
         """
         Initializes the InsightFace app for facial analysis.
 
@@ -23,6 +25,7 @@ class FaceEmbeddingExtractor:
         # Initialize InsightFace app
         self.app = FaceAnalysis(
             name="buffalo_l",
+            root=model_path,
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         self.app.prepare(ctx_id=ctx_id, det_thresh=det_thresh, det_size=det_size)

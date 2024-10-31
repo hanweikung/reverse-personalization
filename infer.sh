@@ -1,4 +1,5 @@
 export SD_MODEL_PATH="stable-diffusion-v1-5/stable-diffusion-v1-5"
+export INSIGHTFACE_MODEL_PATH="~/.insightface"
 export DATASET_LOADING_SCRIPT_PATH="test_dataset_loading_script.py"
 export OUTPUT_DIR="test-infer"
 export NCCL_P2P_DISABLE=1
@@ -7,6 +8,7 @@ export TORCH_DISTRIBUTED_DEBUG="INFO"
 # CUDA_VISIBLE_DEVICES=0 python -m main_run_batch \
 accelerate launch --multi_gpu -m main_run_batch \
 	--sd_model_path=$SD_MODEL_PATH \
+	--insightface_model_path=$INSIGHTFACE_MODEL_PATH \
 	--dataset_loading_script_path=$DATASET_LOADING_SCRIPT_PATH \
 	--center_crop \
 	--output_dir $OUTPUT_DIR \

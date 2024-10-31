@@ -35,6 +35,12 @@ def parse_arguments():
         help="Path to the Stable Diffusion 1.5 model",
     )
     parser.add_argument(
+        "--insightface_model_path",
+        type=str,
+        default="~/.insightface",
+        help="Path to the InsightFace model",
+    )
+    parser.add_argument(
         "--dataset_loading_script_path",
         type=str,
         default=None,
@@ -247,7 +253,9 @@ def main():
         output_vis_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize the LDM Stable Diffusion pipeline
-    sd_model_path = args.sd_model_path  # load local save of model (for internet problems)
+    sd_model_path = (
+        args.sd_model_path
+    )  # load local save of model (for internet problems)
 
     ldm_stable = StableDiffusionInpaintPipeline.from_pretrained(
         sd_model_path, torch_dtype=torch.float16
@@ -259,7 +267,9 @@ def main():
         image_encoder_folder=None,
     )
     ldm_stable.set_ip_adapter_scale(args.ip_adapter_scale)
-    ldm_stable.scheduler = DDIMScheduler.from_config(sd_model_path, subfolder="scheduler")
+    ldm_stable.scheduler = DDIMScheduler.from_config(
+        sd_model_path, subfolder="scheduler"
+    )
     ldm_stable.scheduler.set_timesteps(args.num_diffusion_steps)
     dtype = ldm_stable.dtype
 
@@ -268,7 +278,7 @@ def main():
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
-        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
+        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size), model_path=args.insightface_model_path,
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     # Load the test dataset

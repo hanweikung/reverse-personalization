@@ -37,6 +37,12 @@ if __name__ == "__main__":
         default="stable-diffusion-v1-5/stable-diffusion-v1-5",
         help="Path to the Stable Diffusion 1.5 model",
     )
+    parser.add_argument(
+        "--insightface_model_path",
+        type=str,
+        default="~/.insightface",
+        help="Path to the InsightFace model",
+    )
     parser.add_argument("--device_num", type=int, default=0)
     parser.add_argument("--cfg_src", type=float, default=7.0)
     parser.add_argument("--cfg_tar", type=float, default=7.0)
@@ -139,7 +145,10 @@ if __name__ == "__main__":
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
-        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
+        ctx_id=0,
+        det_thresh=args.det_thresh,
+        det_size=(args.det_size, args.det_size),
+        model_path=args.insightface_model_path,
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     # Open the output file in write mode
