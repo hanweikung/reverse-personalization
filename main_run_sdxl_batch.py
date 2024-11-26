@@ -29,6 +29,18 @@ def parse_args():
         description="Demonstrate how to use LEDITS++ with SDXL and the IP adapter"
     )
     parser.add_argument(
+        "--sd_model_path",
+        type=str,
+        default="stabilityai/stable-diffusion-xl-base-1.0",
+        help="Path to the Stable Diffusion XL model",
+    )
+    parser.add_argument(
+        "--insightface_model_path",
+        type=str,
+        default="~/.insightface",
+        help="Path to the InsightFace model",
+    )
+    parser.add_argument(
         "--dataset_loading_script_path",
         type=str,
         default=None,
@@ -136,7 +148,12 @@ def parse_args():
         default=1024,
         help="The size for face detection model input",
     )
-
+    parser.add_argument(
+        "--max_angle",
+        type=float,
+        default=0.0,
+        help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
+    )
     args = parser.parse_args()
     return args
 
@@ -159,10 +176,16 @@ def make_test_dataset(args):
     )
 
     def preprocess_test(examples):
-        images = [image.convert("RGB") for image in examples["image"]]
-        images = [image_transforms(image) for image in images]
+        source_images = [image.convert("RGB") for image in examples["source_image"]]
+        source_images = [image_transforms(image) for image in source_images]
+        target_images = [image.convert("RGB") for image in examples["target_image"]]
+        target_images = [image_transforms(image) for image in target_images]
+        mask_images = [image.convert("RGB") for image in examples["mask_image"]]
+        mask_images = [image_transforms(image) for image in mask_images]
 
-        examples["image"] = images
+        examples["source_image"] = source_images
+        examples["target_image"] = target_images
+        examples["mask_image"] = mask_images
 
         return examples
 
@@ -175,12 +198,20 @@ def make_test_dataset(args):
 
 
 def collate_fn(examples):
-    images = [example["image"] for example in examples]
-    image_paths = [example["image_path"] for example in examples]
+    source_images = [example["source_image"] for example in examples]
+    target_images = [example["target_image"] for example in examples]
+    mask_images = [example["mask_image"] for example in examples]
+    source_image_paths = [example["source_image_path"] for example in examples]
+    target_image_paths = [example["target_image_path"] for example in examples]
+    mask_image_paths = [example["mask_image_path"] for example in examples]
 
     return {
-        "images": images,
-        "image_paths": image_paths,
+        "source_images": source_images,
+        "source_image_paths": source_image_paths,
+        "target_images": target_images,
+        "target_image_paths": target_image_paths,
+        "mask_images": mask_images,
+        "mask_image_paths": mask_image_paths,
     }
 
 
@@ -231,15 +262,14 @@ if __name__ == "__main__":
         if args.inversion == "leditspp"
         else LEditsPPPipelineStableDiffusionXL
     )
-    model_id = "stabilityai/stable-diffusion-xl-base-1.0"
     pipe = pipeline_class.from_pretrained(
-        model_id,
+        args.sd_model_path,
         image_encoder=image_encoder,
         torch_dtype=dtype,
     )
     if args.inversion == "leditspp":
         pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
-            model_id,
+            args.sd_model_path,
             subfolder="scheduler",
             algorithm_type="sde-dpmsolver++",
             solver_order=2,
@@ -255,7 +285,10 @@ if __name__ == "__main__":
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
-        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
+        ctx_id=0,
+        det_thresh=args.det_thresh,
+        det_size=(args.det_size, args.det_size),
+        model_path=args.insightface_model_path,
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     # Load the test dataset
@@ -275,21 +308,38 @@ if __name__ == "__main__":
             # Group corresponding items from each key together
             grouped_items = list(
                 zip(
-                    batch["images"],
-                    batch["image_paths"],
+                    batch["source_images"],
+                    batch["source_image_paths"],
+                    batch["target_images"],
+                    batch["target_image_paths"],
+                    batch["mask_images"],
+                    batch["mask_image_paths"],
                 )
             )
 
-            for image, image_path in grouped_items:
-                filename = f"{Path(image_path).stem}.png"
+            for (
+                source_image,
+                source_image_path,
+                target_image,
+                target_image_path,
+                mask_image,
+                mask_image_path,
+            ) in grouped_items:
+                filename = (
+                    f"{Path(source_image_path).stem}-{Path(target_image_path).stem}.png"
+                )
                 save_to = Path(args.output_dir, filename)
 
                 if save_to.is_file():
-                    pass
+                    continue
 
+                do_anonymization = source_image_path == target_image_path
                 try:
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
-                        image_path=image_path,
+                        image_path=source_image_path,
+                        max_angle=args.max_angle,
+                        is_opposite=do_anonymization,
+                        seed=args.seed,
                         scale_factor=args.id_emb_scale,
                         dtype=dtype,
                         device=device,
@@ -302,7 +352,7 @@ if __name__ == "__main__":
                         generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
                     reconstructed_image = pipe.invert(
-                        image=image,
+                        image=target_image,
                         num_inversion_steps=args.num_inversion_steps,
                         skip=args.skip,
                         source_guidance_scale=args.guidance_scale,
@@ -326,7 +376,16 @@ if __name__ == "__main__":
                     if args.vis_input:
                         save_vis_to = Path(output_vis_dir, filename)
                         if not save_vis_to.is_file():
-                            combined_image = make_image_grid(
-                                [image, pil_image], rows=1, cols=2
-                            )
+                            if do_anonymization:
+                                # face anonymization
+                                combined_image = make_image_grid(
+                                    [target_image, pil_image], rows=1, cols=2
+                                )
+                            else:
+                                # face swapping
+                                combined_image = make_image_grid(
+                                    [source_image, target_image, pil_image],
+                                    rows=1,
+                                    cols=3,
+                                )
                             combined_image.save(save_vis_to)

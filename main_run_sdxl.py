@@ -22,6 +22,19 @@ def parse_args():
         description="Demonstrate how to use LEDITS++ with SDXL and the IP adapter"
     )
     parser.add_argument(
+        "--sd_model_path",
+        type=str,
+        default="stabilityai/stable-diffusion-xl-base-1.0",
+        help="Path to the Stable Diffusion XL model",
+    )
+    parser.add_argument(
+        "--insightface_model_path",
+        type=str,
+        default="~/.insightface",
+        help="Path to the InsightFace model",
+    )
+    parser.add_argument("--device_num", type=int, default=0)
+    parser.add_argument(
         "--input_image",
         type=str,
         required=True,
@@ -96,7 +109,15 @@ def parse_args():
         default=1024,
         help="The size for face detection model input",
     )
-
+    parser.add_argument(
+        "--seed", type=int, default=0, help="A seed for reproducible inference."
+    )
+    parser.add_argument(
+        "--max_angle",
+        type=float,
+        default=0.0,
+        help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
+    )
     args = parser.parse_args()
     return args
 
@@ -104,6 +125,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     dtype = torch.float16
+    device = f"cuda:{args.device_num}"
 
     image_encoder = CLIPVisionModelWithProjection.from_pretrained(
         "h94/IP-Adapter", subfolder="models/image_encoder", torch_dtype=dtype
@@ -117,15 +139,14 @@ if __name__ == "__main__":
         if args.inversion == "leditspp"
         else LEditsPPPipelineStableDiffusionXL
     )
-    model_id = "stabilityai/stable-diffusion-xl-base-1.0"
     pipe = pipeline_class.from_pretrained(
-        model_id,
+        args.sd_model_path,
         image_encoder=image_encoder,
         torch_dtype=dtype,
     )
     if args.inversion == "leditspp":
         pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
-            model_id,
+            args.sd_model_path,
             subfolder="scheduler",
             algorithm_type="sde-dpmsolver++",
             solver_order=2,
@@ -134,11 +155,20 @@ if __name__ == "__main__":
 
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
-        ctx_id=0, det_thresh=args.det_thresh, det_size=(args.det_size, args.det_size)
+        ctx_id=0,
+        det_thresh=args.det_thresh,
+        det_size=(args.det_size, args.det_size),
+        model_path=args.insightface_model_path,
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     id_embs_inv, id_embs = extractor.get_face_embeddings(
-        args.input_image, args.id_emb_scale, dtype
+        image_path=args.input_image,
+        max_angle=args.max_angle,
+        is_opposite=True,
+        seed=args.seed,
+        scale_factor=args.id_emb_scale,
+        dtype=dtype,
+        device=device,
     )
     pipe.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
