@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument(
         "--id_emb_scale",
         type=float,
-        default=-1.0,
+        default=1.0,
         help="Scaling factor for the identity embedding, with a default value of -1.0 for anonymization purposes.",
     )
     parser.add_argument(
@@ -145,7 +145,7 @@ def parse_args():
     parser.add_argument(
         "--det_size",
         type=int,
-        default=1024,
+        default=640,
         help="The size for face detection model input",
     )
     parser.add_argument(
