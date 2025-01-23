@@ -164,7 +164,7 @@ if __name__ == "__main__":
     id_embs_inv, id_embs = extractor.get_face_embeddings(
         image_path=args.input_image,
         max_angle=args.max_angle,
-        is_opposite=True,
+        is_opposite=False,
         seed=args.seed,
         scale_factor=args.id_emb_scale,
         dtype=dtype,
