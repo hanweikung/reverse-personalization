@@ -1,4 +1,4 @@
-diffusers["torch"]==0.30.0
+diffusers[torch]==0.30.0
 transformers
 torchvision
 datasets
