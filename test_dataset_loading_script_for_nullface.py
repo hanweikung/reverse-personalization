@@ -14,7 +14,6 @@
 # TODO: Address all TODOs and remove all explanatory comments
 """TODO: Add a description here."""
 
-
 import os
 
 import datasets
@@ -62,11 +61,9 @@ class NewDataset(datasets.GeneratorBasedBuilder):
         # TODO: This method specifies the datasets.DatasetInfo object which contains informations and typings for the dataset
         features = datasets.Features(
             {
-                "source_image": datasets.Image(),
-                "target_image": datasets.Image(),
+                "image": datasets.Image(),
                 "mask_image": datasets.Image(),
-                "source_image_path": datasets.Value("string"),
-                "target_image_path": datasets.Value("string"),
+                "image_path": datasets.Value("string"),
                 "mask_image_path": datasets.Value("string"),
             }
         )
@@ -112,35 +109,26 @@ class NewDataset(datasets.GeneratorBasedBuilder):
         metadata = pd.read_json(metadata_path, lines=True)
 
         for _, row in metadata.iterrows():
-            source_image_path = row["source_image"]
-            source_image_path = os.path.join(images_dir, source_image_path)
-            source_image = open(source_image_path, "rb").read()
+            image_name = row["image"]
+            image_path = os.path.join(images_dir, image_name)
+            image = open(image_path, "rb").read()
 
-            target_image_path = row["target_image"]
-            target_image_path = os.path.join(images_dir, target_image_path)
-            target_image = open(target_image_path, "rb").read()
-
-            mask_image_path = row["mask_image"]
-            mask_image_path = os.path.join(mask_images_dir, mask_image_path)
+            mask_image_name = row["mask_image"]
+            mask_image_path = os.path.join(mask_images_dir, mask_image_name)
             mask_image = open(mask_image_path, "rb").read()
 
             yield (
-                "-".join([source_image_path, target_image_path, mask_image_path]),
+                "-".join([image_path, mask_image_path]),
                 {
-                    "source_image": {
-                        "path": source_image_path,
-                        "bytes": source_image,
-                    },
-                    "target_image": {
-                        "path": target_image_path,
-                        "bytes": target_image,
+                    "image": {
+                        "path": image_path,
+                        "bytes": image,
                     },
                     "mask_image": {
                         "path": mask_image_path,
                         "bytes": mask_image,
                     },
-                    "source_image_path": source_image_path,
-                    "target_image_path": target_image_path,
+                    "image_path": image_path,
                     "mask_image_path": mask_image_path,
                 },
             )

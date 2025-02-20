@@ -19,7 +19,6 @@ from ddm_inversion.inversion_utils import (
     inversion_reverse_process,
 )
 from ddm_inversion.utils import dataset_from_yaml, image_grid
-from utils.face_embedding import FaceEmbeddingExtractor
 from prompt_to_prompt.ptp_classes import (
     AttentionRefine,
     AttentionReplace,
@@ -28,6 +27,7 @@ from prompt_to_prompt.ptp_classes import (
     load_512,
 )
 from prompt_to_prompt.ptp_utils import register_attention_control, text2image_ldm_stable
+from utils.face_embedding import FaceEmbeddingExtractor
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -155,8 +155,7 @@ if __name__ == "__main__":
     with open(args.output_file, "w") as f:
         for i in tqdm(range(len(full_data))):
             current_image_data = full_data[i]
-            source_image_path = current_image_data["source_image"]
-            target_image_path = current_image_data["target_image"]
+            image_path = current_image_data["image"]
             mask_image_path = current_image_data["mask_image"]
             prompt_src = current_image_data.get(
                 "source_prompt", ""
@@ -166,13 +165,12 @@ if __name__ == "__main__":
             prompt_src = ""
             prompt_tar_list = [""]
 
-            do_anonymization = source_image_path == target_image_path
             # Extract embedding for the largest face with scaling
             try:
                 id_embs_inv, id_embs = extractor.get_face_embeddings(
-                    image_path=source_image_path,
+                    image_path=image_path,
                     max_angle=args.max_angle,
-                    is_opposite=do_anonymization,
+                    is_opposite=True,
                     seed=args.seed,
                     scale_factor=args.id_emb_scale,
                     dtype=dtype,
@@ -200,15 +198,15 @@ if __name__ == "__main__":
 
                 # load image
                 offsets = (0, 0, 0, 0)
-                x0 = load_512(target_image_path, *offsets, device).to(dtype=dtype)
+                x0 = load_512(image_path, *offsets, device).to(dtype=dtype)
 
-                # Check if the target mask path exists. If it does, load the mask image.
-                # Otherwise, create a new black image with the same size as the target image.
+                # Check if the mask path exists. If it does, load the mask image.
+                # Otherwise, create a new black image with the same size as the image.
                 if mask_image_path and Path(mask_image_path).is_file():
                     mask_image = load_image(mask_image_path)
                 else:
                     print(f"Error: The file '{mask_image_path}' was not found.")
-                    # width and height are the dimensions of the target image
+                    # width and height are the dimensions of the image
                     height, width = x0.shape[-2:]
                     # Create a new image with a white background
                     mask_image = Image.new("RGB", (width, height), "white")
@@ -361,7 +359,7 @@ if __name__ == "__main__":
 
                             # Replace dots with underscores.
                             # Format cfg to have at least 4 characters in total, including one digit after the decimal point, and pad it with leading zeros if necessary.
-                            filename_wo_ext = f"{Path(source_image_path).stem}-{Path(target_image_path).stem}-cfg-tar-{shifted_cfg_scale_tar:04.1f}-skip-{skip}-id-{id_emb_scale}".replace(
+                            filename_wo_ext = f"{Path(image_path).stem}-cfg-tar-{shifted_cfg_scale_tar:04.1f}-skip-{skip}-id-{id_emb_scale}".replace(
                                 ".", "_"
                             )
 

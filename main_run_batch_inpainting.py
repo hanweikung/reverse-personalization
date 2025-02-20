@@ -176,15 +176,12 @@ def make_test_dataset(args):
     )
 
     def preprocess_test(examples):
-        source_images = [image.convert("RGB") for image in examples["source_image"]]
-        source_images = [image_transforms(image) for image in source_images]
-        target_images = [image.convert("RGB") for image in examples["target_image"]]
-        target_images = [image_transforms(image) for image in target_images]
+        images = [image.convert("RGB") for image in examples["image"]]
+        images = [image_transforms(image) for image in images]
         mask_images = [image.convert("RGB") for image in examples["mask_image"]]
         mask_images = [image_transforms(image) for image in mask_images]
 
-        examples["source_image"] = source_images
-        examples["target_image"] = target_images
+        examples["image"] = images
         examples["mask_image"] = mask_images
 
         return examples
@@ -198,18 +195,14 @@ def make_test_dataset(args):
 
 
 def collate_fn(examples):
-    source_images = [example["source_image"] for example in examples]
-    target_images = [example["target_image"] for example in examples]
+    images = [example["image"] for example in examples]
     mask_images = [example["mask_image"] for example in examples]
-    source_image_paths = [example["source_image_path"] for example in examples]
-    target_image_paths = [example["target_image_path"] for example in examples]
+    image_paths = [example["image_path"] for example in examples]
     mask_image_paths = [example["mask_image_path"] for example in examples]
 
     return {
-        "source_images": source_images,
-        "source_image_paths": source_image_paths,
-        "target_images": target_images,
-        "target_image_paths": target_image_paths,
+        "images": images,
+        "image_paths": image_paths,
         "mask_images": mask_images,
         "mask_image_paths": mask_image_paths,
     }
@@ -303,37 +296,32 @@ def main():
             # Group corresponding items from each key together
             grouped_items = list(
                 zip(
-                    batch["source_images"],
-                    batch["source_image_paths"],
-                    batch["target_images"],
-                    batch["target_image_paths"],
+                    batch["images"],
+                    batch["image_paths"],
                     batch["mask_images"],
                     batch["mask_image_paths"],
                 )
             )
 
             for (
-                source_image,
-                source_image_path,
-                target_image,
-                target_image_path,
+                image,
+                image_path,
                 mask_image,
                 mask_image_path,
             ) in grouped_items:
                 filename = (
-                    f"{Path(source_image_path).stem}-{Path(target_image_path).stem}.png"
+                    f"{Path(image_path).stem}.png"
                 )
                 save_to = Path(args.output_dir, filename)
 
                 if save_to.is_file():
                     continue
 
-                do_anonymization = source_image_path == target_image_path
                 try:
                     id_embs_inv, id_embs = extractor.get_face_embeddings(
-                        image_path=source_image_path,
+                        image_path=image_path,
                         max_angle=args.max_angle,
-                        is_opposite=do_anonymization,
+                        is_opposite=True,
                         seed=args.seed,
                         scale_factor=args.id_emb_scale,
                         dtype=dtype,
@@ -345,7 +333,7 @@ def main():
                     generator = torch.manual_seed(args.seed)
                     pil_image = ldm_stable(
                         prompt="",
-                        image=target_image,
+                        image=image,
                         mask_image=mask_image,
                         generator=generator,
                         ip_adapter_image_embeds=[id_embs],
@@ -355,18 +343,9 @@ def main():
                     if args.vis_input:
                         save_vis_to = Path(output_vis_dir, filename)
                         if not save_vis_to.is_file():
-                            if do_anonymization:
-                                # face anonymization
-                                combined_image = make_image_grid(
-                                    [target_image, pil_image], rows=1, cols=2
-                                )
-                            else:
-                                # face swapping
-                                combined_image = make_image_grid(
-                                    [source_image, target_image, pil_image],
-                                    rows=1,
-                                    cols=3,
-                                )
+                            combined_image = make_image_grid(
+                                [image, pil_image], rows=1, cols=2
+                            )
                             combined_image.save(save_vis_to)
 
 
