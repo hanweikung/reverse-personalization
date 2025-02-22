@@ -373,12 +373,12 @@ def main():
                     pil_image.save(save_to)
 
                     if args.vis_input:
-                        save_vis_to = Path(output_vis_dir, filename)
+                        save_vis_to = Path(output_vis_dir, filename).with_suffix(".jpg")
                         if not save_vis_to.is_file():
                             combined_image = make_image_grid(
                                 [image, pil_image], rows=1, cols=2
                             )
-                            combined_image.save(save_vis_to)
+                            combined_image.save(save_vis_to, format="JPEG")
 
 
 if __name__ == "__main__":
