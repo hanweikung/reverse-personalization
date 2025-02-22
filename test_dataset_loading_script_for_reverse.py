@@ -45,8 +45,8 @@ _LICENSE = ""
 
 # TODO: Add link to the official dataset URLs here
 _URLS = {
-    "metadata_path": "/data/han-wei/DDPM_inversion/cele-temp.jsonl",
-    "images_dir": "/data/han-wei/DDPM_inversion/cele-temp/",
+    "metadata_path": "my_dataset/metadata_for_reverse.jsonl",
+    "images_dir": "my_dataset/images/",
 }
 
 

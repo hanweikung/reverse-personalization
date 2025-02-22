@@ -45,9 +45,9 @@ _LICENSE = ""
 
 # TODO: Add link to the official dataset URLs here
 _URLS = {
-    "metadata_path": "/path/to/metadata.jsonl",
-    "images_dir": "/path/to/dataset-name",
-    "mask_images_dir": "/path/to/dataset-name",
+    "metadata_path": "my_dataset/metadata_for_nullface.jsonl",
+    "images_dir": "my_dataset/images/",
+    "mask_images_dir": "my_dataset/masks/",
 }
 
 
