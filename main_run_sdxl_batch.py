@@ -154,6 +154,18 @@ def parse_args():
         default=0.0,
         help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
     )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default=None,
+        help="The prompt or prompts to guide image generation.",
+    )
+    parser.add_argument(
+        "--negative_prompt",
+        type=str,
+        default=None,
+        help="The prompt or prompts to guide what to not include in image generation.",
+    )
     args = parser.parse_args()
     return args
 
@@ -192,10 +204,12 @@ def make_test_dataset(args):
 def collate_fn(examples):
     images = [example["image"] for example in examples]
     image_paths = [example["image_path"] for example in examples]
+    prompts = [example["prompt"] for example in examples]
 
     return {
         "images": images,
         "image_paths": image_paths,
+        "prompts": prompts,
     }
 
 
@@ -294,12 +308,14 @@ if __name__ == "__main__":
                 zip(
                     batch["images"],
                     batch["image_paths"],
+                    batch["prompts"],
                 )
             )
 
             for (
                 image,
                 image_path,
+                prompt,
             ) in grouped_items:
                 filename = f"{Path(image_path).stem}.png"
                 save_to = Path(args.output_dir, filename)
@@ -334,7 +350,10 @@ if __name__ == "__main__":
                     ).vae_reconstruction_images[0]
 
                     pil_image = pipe(
-                        prompt="",
+                        prompt=args.prompt if args.prompt is not None else "",
+                        negative_prompt=args.negative_prompt
+                        if args.negative_prompt is not None
+                        else prompt,
                         ip_adapter_image_embeds=[id_embs],
                         num_images_per_prompt=1,
                         generator=generator,

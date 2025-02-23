@@ -62,6 +62,7 @@ class NewDataset(datasets.GeneratorBasedBuilder):
             {
                 "image": datasets.Image(),
                 "image_path": datasets.Value("string"),
+                "prompt": datasets.Value("string"),
             }
         )
 
@@ -104,6 +105,7 @@ class NewDataset(datasets.GeneratorBasedBuilder):
         metadata = pd.read_json(metadata_path, lines=True)
 
         for _, row in metadata.iterrows():
+            prompt = row["prompt"]
             image_name = row["image"]
             image_path = os.path.join(images_dir, image_name)
             image = open(image_path, "rb").read()
@@ -116,5 +118,6 @@ class NewDataset(datasets.GeneratorBasedBuilder):
                         "bytes": image,
                     },
                     "image_path": image_path,
+                    "prompt": prompt,
                 },
             )
