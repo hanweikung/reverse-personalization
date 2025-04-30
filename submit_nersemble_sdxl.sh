@@ -25,40 +25,22 @@ export SCRIPT=main_run_sdxl.py
 # Define face images for different runs
 declare -A FACE_IMAGES_MAP
 FACE_IMAGES_MAP["set1"]=" \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/037/37_237.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/037/37_296.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/037/37_355.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/037/37_414.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/037/37_532.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/037/37_237.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/037/37_355.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/037/37_414.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/037/37_532.png \
 "
 FACE_IMAGES_MAP["set2"]=" \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/064/64_078.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/064/64_155.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/064/64_309.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/064/64_463.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/064/64_617.png \
-"
-FACE_IMAGES_MAP["set3"]=" \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/082/82_001.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/082/82_039.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/082/82_077.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/082/82_115.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/082/82_153.png \
-"
-FACE_IMAGES_MAP["set4"]=" \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/099/99_229.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/099/99_286.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/099/99_343.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/099/99_400.png \
-  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/cropped/resized/099//99_457.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/099/99_229.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/099/99_286.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/099/99_343.png \
+  /leonardo_work/IscrC_SYNFACE/hkung/datasets/nersemble_data/data/selected/whole_face_no_align/099/99_457.png \
 "
 
 # Map set keys to their respective negative prompts
 declare -A NEGATIVE_PROMPTS
 NEGATIVE_PROMPTS["set1"]="28-year-old indian man"
-NEGATIVE_PROMPTS["set2"]="21-year-old white girl"
-NEGATIVE_PROMPTS["set3"]="23-year-old indian girl"
-NEGATIVE_PROMPTS["set4"]="28-year-old middle eastern man"
+NEGATIVE_PROMPTS["set2"]="28-year-old middle eastern man"
 
 run_script() {
   local input_image=$1
@@ -68,17 +50,17 @@ run_script() {
   python $SCRIPT \
     --sd_model_path "stabilityai/stable-diffusion-xl-base-1.0" \
     --input_image $input_image \
-    --guidance_scale "-5.0" \
+    --guidance_scale "-8.0" \
     --skip "0.7" \
-    --ip_adapter_scale "0.12" \
+    --ip_adapter_scale "0.2" \
     --id_emb_scale "1.0" \
     --inversion "leditspp" \
     --num_inversion_steps "100" \
     --resolution "1024" \
-    --det_size "640" \
+    --det_size "512" \
     --seed "0" \
-    --face_images $face_images \
-    --negative_prompt "$negative_prompt" # remove the `&` at the end so that it waits for each process to finish before moving on
+    --face_images $face_images
+  # --negative_prompt "$negative_prompt" # remove the `&` at the end so that it waits for each process to finish before moving on
 }
 
 trap "trap ' ' TERM INT; kill -TERM 0; wait" TERM INT
