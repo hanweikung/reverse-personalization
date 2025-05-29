@@ -157,23 +157,18 @@ if __name__ == "__main__":
     if args.face_images is None:
         args.face_images = [args.input_image]
 
-    pipeline_class = (
-        StableDiffusionPipelineXL_LEDITS
-        if args.inversion == "leditspp"
-        else LEditsPPPipelineStableDiffusionXL
-    )
+    pipeline_class = StableDiffusionPipelineXL_LEDITS
     pipe = pipeline_class.from_pretrained(
         args.sd_model_path,
         image_encoder=image_encoder,
         torch_dtype=dtype,
     )
-    if args.inversion == "leditspp":
-        pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
-            args.sd_model_path,
-            subfolder="scheduler",
-            algorithm_type="sde-dpmsolver++",
-            solver_order=2,
-        )
+    pipe.scheduler = DPMSolverMultistepSchedulerInject.from_pretrained(
+        args.sd_model_path,
+        subfolder="scheduler",
+        algorithm_type="sde-dpmsolver++",
+        solver_order=2,
+    )
     pipe = pipe.to("cuda")
 
     # Initialize FaceEmbeddingExtractor instance
