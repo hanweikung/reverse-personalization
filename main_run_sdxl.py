@@ -5,10 +5,6 @@ import torch
 from PIL import Image
 from transformers import CLIPVisionModelWithProjection
 
-from custom_ip_adapter_loader import load_ip_adapter, set_ip_adapter_scale
-from sdxl.diffusers.pipeline_stable_diffusion_xl import (
-    StableDiffusionXLPipeline as LEditsPPPipelineStableDiffusionXL,
-)
 from sdxl.leditspp.pipeline_stable_diffusion_xl import (
     StableDiffusionXLPipeline as StableDiffusionPipelineXL_LEDITS,
 )
@@ -78,13 +74,6 @@ def parse_args():
         help="CFG scale for guidance. The default value is 3.0.",
     )
     parser.add_argument(
-        "--inversion",
-        default="leditspp",
-        choices=["leditspp", "diffusers"],
-        type=str,
-        help="The inversion mode. The default value is 'leditspp'.",
-    )
-    parser.add_argument(
         "--num_inversion_steps",
         default=100,
         type=int,
@@ -145,8 +134,7 @@ if __name__ == "__main__":
     if args.face_images is None:
         args.face_images = [args.input_image]
 
-    pipeline_class = StableDiffusionPipelineXL_LEDITS
-    pipe = pipeline_class.from_pretrained(
+    pipe = StableDiffusionPipelineXL_LEDITS.from_pretrained(
         args.sd_model_path,
         image_encoder=image_encoder,
         torch_dtype=dtype,
