@@ -181,7 +181,7 @@ if __name__ == "__main__":
     ip_adapter_scales = [args.ip_adapter_scale] * len(args.face_images)
     pipe.set_ip_adapter_scale(ip_adapter_scales)
 
-    generator = torch.Generator(device="cpu").manual_seed(42)
+    generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
     reconstructed_image = pipe.invert(
         image=image,
