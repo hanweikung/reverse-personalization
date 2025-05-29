@@ -59,8 +59,8 @@ def parse_args():
     parser.add_argument(
         "--guidance_scale",
         type=float,
-        default=3.0,
-        help="CFG scale for guidance. The default value is 3.0.",
+        default=-7.5,
+        help="CFG scale for guidance.",
     )
     parser.add_argument(
         "--num_inversion_steps",
