@@ -57,17 +57,6 @@ def parse_args():
         help="Scale for the identity embedding. The default value is 1.0.",
     )
     parser.add_argument(
-        "--shift_neg_id_emb_scale",
-        action="store_true",
-        help="Negative id_emb_scale value will be shifted to positive in the output filename when the flag is True.",
-    )
-    parser.add_argument(
-        "--shift_neg_cfg",
-        type=float,
-        default=0.0,
-        help="Add this value to the classifier-free guidance to make negative values positive in the output filename.",
-    )
-    parser.add_argument(
         "--guidance_scale",
         type=float,
         default=3.0,
@@ -159,8 +148,6 @@ if __name__ == "__main__":
     for face_image in face_images:
         id_embs_inv, id_embs = extractor.get_face_embeddings(
             image_path=face_image,
-            max_angle=args.max_angle,
-            is_opposite=False,
             seed=args.seed,
             scale_factor=args.id_emb_scale,
             dtype=dtype,
@@ -201,14 +188,10 @@ if __name__ == "__main__":
         num_inference_steps=args.num_inversion_steps,
     ).images[0]
 
-    id_emb_scale = (
-        args.id_emb_scale + 1.0 if args.shift_neg_id_emb_scale else args.id_emb_scale
-    )
-    shifted_cfg_scale_tar = args.guidance_scale + args.shift_neg_cfg
     input_filename_wo_ext = Path(args.input_image).stem
     # Replace dots with underscores
     filename_wo_ext = (
-        f"{input_filename_wo_ext}-skip-{args.skip}-id-{id_emb_scale}-cfg-{shifted_cfg_scale_tar:05.2f}-ip-{args.ip_adapter_scale:04.2f}"
+        f"{input_filename_wo_ext}-skip-{args.skip}-id-{args.id_emb_scale}-cfg-{args.guidance_scale:05.2f}-ip-{args.ip_adapter_scale:04.2f}"
     ).replace(".", "_")
 
     image.save(filename_wo_ext + ".png")
