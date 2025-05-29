@@ -126,18 +126,6 @@ def parse_args():
         default=0.0,
         help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
     )
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default=None,
-        help="The prompt or prompts to guide image generation.",
-    )
-    parser.add_argument(
-        "--negative_prompt",
-        type=str,
-        default=None,
-        help="The prompt or prompts to guide what to not include in image generation.",
-    )
     args = parser.parse_args()
     return args
 
@@ -217,10 +205,6 @@ if __name__ == "__main__":
     ).vae_reconstruction_images[0]
 
     image = pipe(
-        prompt=args.prompt if args.prompt is not None else "",
-        negative_prompt=args.negative_prompt
-        if args.negative_prompt is not None
-        else "",
         ip_adapter_image_embeds=id_embs_list,
         num_images_per_prompt=1,
         generator=generator,
