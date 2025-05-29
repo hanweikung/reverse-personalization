@@ -131,8 +131,7 @@ if __name__ == "__main__":
     image = Image.open(args.input_image)
     image = image.resize((args.resolution, args.resolution), Image.Resampling.LANCZOS)
 
-    if args.face_images is None:
-        args.face_images = [args.input_image]
+    face_images = args.face_images or [args.input_image]
 
     pipe = StableDiffusionPipelineXL_LEDITS.from_pretrained(
         args.sd_model_path,
@@ -157,7 +156,7 @@ if __name__ == "__main__":
 
     id_embs_inv_list = []
     id_embs_list = []
-    for face_image in args.face_images:
+    for face_image in face_images:
         id_embs_inv, id_embs = extractor.get_face_embeddings(
             image_path=face_image,
             max_angle=args.max_angle,
@@ -170,7 +169,7 @@ if __name__ == "__main__":
         id_embs_inv_list.append(id_embs_inv)
         id_embs_list.append(id_embs)
 
-    weight_names = ["ip-adapter-faceid_sdxl.bin"] * len(args.face_images)
+    weight_names = ["ip-adapter-faceid_sdxl.bin"] * len(face_images)
     pipe.load_ip_adapter(
         "h94/IP-Adapter-FaceID",
         subfolder=None,
@@ -178,7 +177,7 @@ if __name__ == "__main__":
         image_encoder_folder=None,
     )
 
-    ip_adapter_scales = [args.ip_adapter_scale] * len(args.face_images)
+    ip_adapter_scales = [args.ip_adapter_scale] * len(face_images)
     pipe.set_ip_adapter_scale(ip_adapter_scales)
 
     generator = torch.Generator(device="cpu").manual_seed(args.seed)
