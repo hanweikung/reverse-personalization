@@ -98,12 +98,6 @@ def parse_args():
     parser.add_argument(
         "--seed", type=int, default=0, help="A seed for reproducible inference."
     )
-    parser.add_argument(
-        "--max_angle",
-        type=float,
-        default=0.0,
-        help="The maximum allowed angle (in degrees) between the generated face embedding and the input face embedding.",
-    )
     args = parser.parse_args()
     return args
 
