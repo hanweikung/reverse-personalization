@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument(
         "--skip",
         type=float,
-        default=0.1,
+        default=0.7,
         help="Controlling the adherence to the input image.",
     )
     parser.add_argument(
