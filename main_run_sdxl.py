@@ -179,6 +179,7 @@ if __name__ == "__main__":
     ).vae_reconstruction_images[0]
 
     image = pipe(
+        prompt="",
         ip_adapter_image_embeds=id_embs_list,
         num_images_per_prompt=1,
         generator=generator,
