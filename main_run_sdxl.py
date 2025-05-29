@@ -114,7 +114,7 @@ def parse_args():
     parser.add_argument(
         "--det_size",
         type=int,
-        default=1024,
+        default=640,
         help="The size for face detection model input",
     )
     parser.add_argument(
