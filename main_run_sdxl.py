@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import face_alignment
 import torch
 from PIL import Image
 from transformers import CLIPVisionModelWithProjection
@@ -11,7 +12,9 @@ from sdxl.leditspp.pipeline_stable_diffusion_xl import (
 from sdxl.leditspp.scheduling_dpmsolver_multistep_inject import (
     DPMSolverMultistepSchedulerInject,
 )
+from utils.extractor import extract_faces
 from utils.face_embedding import FaceEmbeddingExtractor
+from utils.merger import paste_foreground_onto_background
 
 
 def parse_args():
@@ -38,13 +41,6 @@ def parse_args():
         help="The input image that will be edited",
     )
     parser.add_argument(
-        "--face_images",
-        type=str,
-        nargs="*",
-        default=None,
-        help="One or more image paths for face embeddings. Defaults to input_image if not provided.",
-    )
-    parser.add_argument(
         "--skip",
         type=float,
         default=0.7,
@@ -69,7 +65,7 @@ def parse_args():
         help="The number of inversion steps",
     )
     parser.add_argument(
-        "--resolution",
+        "--face_image_size",
         type=int,
         default=1024,
         help=("The resolution for output images."),
@@ -111,10 +107,12 @@ if __name__ == "__main__":
         "h94/IP-Adapter", subfolder="models/image_encoder", torch_dtype=dtype
     )
 
-    image = Image.open(args.input_image)
-    image = image.resize((args.resolution, args.resolution), Image.Resampling.LANCZOS)
+    anon_image = image = Image.open(args.input_image)
 
-    face_images = args.face_images or [args.input_image]
+    fa = face_alignment.FaceAlignment(
+        face_alignment.LandmarksType.TWO_D, face_detector="sfd"
+    )
+    face_images, image_to_face_matrices = extract_faces(fa, image, args.face_image_size)
 
     pipe = StableDiffusionPipelineXL_LEDITS.from_pretrained(
         args.sd_model_path,
@@ -129,6 +127,14 @@ if __name__ == "__main__":
     )
     pipe = pipe.to("cuda")
 
+    pipe.load_ip_adapter(
+        "h94/IP-Adapter-FaceID",
+        subfolder=None,
+        weight_name="ip-adapter-faceid_sdxl.bin",
+        image_encoder_folder=None,
+    )
+    pipe.set_ip_adapter_scale(args.ip_adapter_scale)
+
     # Initialize FaceEmbeddingExtractor instance
     extractor = FaceEmbeddingExtractor(
         ctx_id=0,
@@ -137,9 +143,7 @@ if __name__ == "__main__":
         model_path=args.insightface_model_path,
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
-    id_embs_inv_list = []
-    id_embs_list = []
-    for face_image in face_images:
+    for face_image, image_to_face_mat in zip(face_images, image_to_face_matrices):
         id_embs_inv, id_embs = extractor.get_face_embeddings(
             image_path=face_image,
             seed=args.seed,
@@ -147,41 +151,32 @@ if __name__ == "__main__":
             dtype=dtype,
             device=device,
         )
-        id_embs_inv_list.append(id_embs_inv)
-        id_embs_list.append(id_embs)
 
-    weight_names = ["ip-adapter-faceid_sdxl.bin"] * len(face_images)
-    pipe.load_ip_adapter(
-        "h94/IP-Adapter-FaceID",
-        subfolder=None,
-        weight_name=weight_names,
-        image_encoder_folder=None,
-    )
+        generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
-    ip_adapter_scales = [args.ip_adapter_scale] * len(face_images)
-    pipe.set_ip_adapter_scale(ip_adapter_scales)
+        reconstructed_image = pipe.invert(
+            image=face_image,
+            num_inversion_steps=args.num_inversion_steps,
+            skip=args.skip,
+            source_guidance_scale=args.guidance_scale,
+            ip_adapter_image_embeds=[id_embs_inv],
+            generator=generator,
+        ).vae_reconstruction_images[0]
 
-    generator = torch.Generator(device="cpu").manual_seed(args.seed)
+        anon_face_image = pipe(
+            prompt="",
+            ip_adapter_image_embeds=[id_embs],
+            num_images_per_prompt=1,
+            generator=generator,
+            guidance_scale=args.guidance_scale,
+            timesteps=pipe.scheduler.timesteps,
+            latents=pipe.init_latents,
+            num_inference_steps=args.num_inversion_steps,
+        ).images[0]
 
-    reconstructed_image = pipe.invert(
-        image=image,
-        num_inversion_steps=args.num_inversion_steps,
-        skip=args.skip,
-        source_guidance_scale=args.guidance_scale,
-        ip_adapter_image_embeds=id_embs_inv_list,
-        generator=generator,
-    ).vae_reconstruction_images[0]
-
-    image = pipe(
-        prompt="",
-        ip_adapter_image_embeds=id_embs_list,
-        num_images_per_prompt=1,
-        generator=generator,
-        guidance_scale=args.guidance_scale,
-        timesteps=pipe.scheduler.timesteps,
-        latents=pipe.init_latents,
-        num_inference_steps=args.num_inversion_steps,
-    ).images[0]
+        anon_image = paste_foreground_onto_background(
+            anon_face_image, anon_image, image_to_face_mat
+        )
 
     input_filename_wo_ext = Path(args.input_image).stem
     # Replace dots with underscores
@@ -189,4 +184,4 @@ if __name__ == "__main__":
         f"{input_filename_wo_ext}-skip-{args.skip}-id-{args.id_emb_scale}-cfg-{args.guidance_scale:05.2f}-ip-{args.ip_adapter_scale:04.2f}"
     ).replace(".", "_")
 
-    image.save(filename_wo_ext + ".png")
+    anon_image.save(filename_wo_ext + ".png")
