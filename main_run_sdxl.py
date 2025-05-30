@@ -144,39 +144,44 @@ if __name__ == "__main__":
     )  # Use GPU (ctx_id=0), or CPU with ctx_id=-1
 
     for face_image, image_to_face_mat in zip(face_images, image_to_face_matrices):
-        id_embs_inv, id_embs = extractor.get_face_embeddings(
-            image_path=face_image,
-            seed=args.seed,
-            scale_factor=args.id_emb_scale,
-            dtype=dtype,
-            device=device,
-        )
+        # Extract embedding for the largest face
+        try:
+            id_embs_inv, id_embs = extractor.get_face_embeddings(
+                image_path=face_image,
+                seed=args.seed,
+                scale_factor=args.id_emb_scale,
+                dtype=dtype,
+                device=device,
+            )
+        except ValueError as e:
+            print(e)
+            print("Consider using a lower det_thresh or a different det_size.")
+        else:
+            generator = torch.Generator(device="cpu").manual_seed(args.seed)
 
-        generator = torch.Generator(device="cpu").manual_seed(args.seed)
+            reconstructed_image = pipe.invert(
+                image=face_image,
+                num_inversion_steps=args.num_inversion_steps,
+                skip=args.skip,
+                source_guidance_scale=args.guidance_scale,
+                ip_adapter_image_embeds=[id_embs_inv],
+                generator=generator,
+            ).vae_reconstruction_images[0]
 
-        reconstructed_image = pipe.invert(
-            image=face_image,
-            num_inversion_steps=args.num_inversion_steps,
-            skip=args.skip,
-            source_guidance_scale=args.guidance_scale,
-            ip_adapter_image_embeds=[id_embs_inv],
-            generator=generator,
-        ).vae_reconstruction_images[0]
+            anon_face_image = pipe(
+                prompt="",
+                ip_adapter_image_embeds=[id_embs],
+                num_images_per_prompt=1,
+                generator=generator,
+                guidance_scale=args.guidance_scale,
+                timesteps=pipe.scheduler.timesteps,
+                latents=pipe.init_latents,
+                num_inference_steps=args.num_inversion_steps,
+            ).images[0]
 
-        anon_face_image = pipe(
-            prompt="",
-            ip_adapter_image_embeds=[id_embs],
-            num_images_per_prompt=1,
-            generator=generator,
-            guidance_scale=args.guidance_scale,
-            timesteps=pipe.scheduler.timesteps,
-            latents=pipe.init_latents,
-            num_inference_steps=args.num_inversion_steps,
-        ).images[0]
-
-        anon_image = paste_foreground_onto_background(
-            anon_face_image, anon_image, image_to_face_mat
-        )
+            anon_image = paste_foreground_onto_background(
+                anon_face_image, anon_image, image_to_face_mat
+            )
 
     input_filename_wo_ext = Path(args.input_image).stem
     # Replace dots with underscores
