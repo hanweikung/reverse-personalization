@@ -55,7 +55,7 @@ def parse_args():
     parser.add_argument(
         "--guidance_scale",
         type=float,
-        default=-7.5,
+        default=-10.0,
         help="CFG scale for guidance.",
     )
     parser.add_argument(
