@@ -1,4 +1,4 @@
-name: nullface
+name: reverse-personalization
 dependencies:
   - python=3.12
   - pip
