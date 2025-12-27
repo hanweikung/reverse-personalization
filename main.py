@@ -19,7 +19,7 @@ def main():
         seed=0,
     )
     # anon_image.show()  # Uncomment to display the result
-
+    anon_image.save("output.png")
 
 if __name__ == "__main__":
     main()
