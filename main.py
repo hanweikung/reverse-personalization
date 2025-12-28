@@ -5,6 +5,7 @@ def main():
     input_image_path = "my_dataset/images/00080.png"
     anon_image = anonymize_multiple_persons_in_image(
         input_image=input_image_path,
+        attribute_prompt=None,
         sd_model_path="stabilityai/stable-diffusion-xl-base-1.0",
         insightface_model_path="~/.insightface",
         device_num=0,

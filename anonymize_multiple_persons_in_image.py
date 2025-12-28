@@ -16,6 +16,7 @@ from utils.merger import paste_foreground_onto_background
 
 def anonymize_multiple_persons_in_image(
     input_image,
+    attribute_prompt=None,
     sd_model_path="stabilityai/stable-diffusion-xl-base-1.0",
     insightface_model_path="~/.insightface",
     device_num=0,
@@ -97,6 +98,7 @@ def anonymize_multiple_persons_in_image(
 
             anon_face_image = pipe(
                 prompt="",
+                negative_prompt=attribute_prompt,
                 ip_adapter_image_embeds=[id_embs],
                 num_images_per_prompt=1,
                 generator=generator,
