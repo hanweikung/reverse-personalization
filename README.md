@@ -252,7 +252,7 @@ The anonymized face is composited back into the original image:
 
 ## Acknowledgments
 
-- Stable Diffusion XL: [Stability AI](https://stability.ai/)
+- Stable Diffusion XL: [Stability AI](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
 - Diffusers: [Hugging Face](https://github.com/huggingface/diffusers)
 - IP-Adapter-FaceID: [Tencent AI Lab](https://github.com/tencent-ailab/IP-Adapter)
 - ArcFace: [InsightFace](https://github.com/deepinsight/insightface)
