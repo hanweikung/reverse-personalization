@@ -195,7 +195,7 @@ This will process the default image at `my_dataset/images/00080.png` and save th
 ```
 reverse-personalization/
 │
-├── anonymize_multiple_persons_in_image.py  # Main anonymization function
+├── anonymize_multiple_persons_in_image.py   # Main anonymization function
 ├── main.py                                  # Example usage script
 ├── environment.yml                          # Conda environment specification
 ├── LICENSE                                  # GNU AGPL v3 license
@@ -242,7 +242,7 @@ Using the inverted latents and a modified identity embedding:
 - Forward diffusion generates a new face
 - IP-Adapter-FaceID guides the generation toward a different identity
 - The guidance scale controls the degree of anonymization
-- Negative prompts for attribute control
+- Negative prompts are used to specify wanted facial attributes
 - The process preserves pose, expression, and background from the original
 
 ### 5. Composition
@@ -250,7 +250,7 @@ The anonymized face is composited back into the original image:
 - The inverse affine transformation warps the face to the original position
 - This process repeats for each detected face
 
-# Acknowledgments
+## Acknowledgments
 
 - Stable Diffusion XL: [Stability AI](https://stability.ai/)
 - Diffusers: [Hugging Face](https://github.com/huggingface/diffusers)
