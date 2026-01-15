@@ -14,7 +14,7 @@ from utils.face_embedding import FaceEmbeddingExtractor
 from utils.merger import paste_foreground_onto_background
 
 
-def anonymize_multiple_persons_in_image(
+def anonymize_faces_in_image(
     input_image,
     attribute_prompt=None,
     sd_model_path="stabilityai/stable-diffusion-xl-base-1.0",
@@ -29,6 +29,7 @@ def anonymize_multiple_persons_in_image(
     ip_adapter_scale=1.0,
     det_size=640,
     seed=0,
+    enable_face_detection=False,
 ):
     dtype = torch.float16
     device = f"cuda:{device_num}"
@@ -39,10 +40,16 @@ def anonymize_multiple_persons_in_image(
 
     anon_image = image = Image.open(input_image)
 
-    fa = face_alignment.FaceAlignment(
-        face_alignment.LandmarksType.TWO_D, face_detector="sfd"
-    )
-    face_images, image_to_face_matrices = extract_faces(fa, image, face_image_size)
+    # Extract and align faces if enable_face_detection is True
+    if enable_face_detection:
+        fa = face_alignment.FaceAlignment(
+            face_alignment.LandmarksType.TWO_D, face_detector="sfd"
+        )
+        face_images, image_to_face_matrices = extract_faces(fa, image, face_image_size)
+    else:
+        # Treat the input image as a single aligned face
+        face_images = [image]
+        image_to_face_matrices = [None]
 
     pipe = StableDiffusionPipelineXL_LEDITS.from_pretrained(
         sd_model_path,
@@ -108,8 +115,12 @@ def anonymize_multiple_persons_in_image(
                 num_inference_steps=num_inversion_steps,
             ).images[0]
 
-            anon_image = paste_foreground_onto_background(
-                anon_face_image, anon_image, image_to_face_mat
-            )
+            # Paste the anonymized face back only if enable_face_detection is True
+            if enable_face_detection:
+                anon_image = paste_foreground_onto_background(
+                    anon_face_image, anon_image, image_to_face_mat
+                )
+            else:
+                anon_image = anon_face_image
 
     return anon_image

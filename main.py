@@ -1,9 +1,9 @@
-from anonymize_multiple_persons_in_image import anonymize_multiple_persons_in_image
+from anonymize_faces_in_image import anonymize_faces_in_image
 
 
 def main():
     input_image_path = "my_dataset/images/00080.png"
-    anon_image = anonymize_multiple_persons_in_image(
+    anon_image = anonymize_faces_in_image(
         input_image=input_image_path,
         attribute_prompt=None,
         sd_model_path="stabilityai/stable-diffusion-xl-base-1.0",
@@ -18,6 +18,7 @@ def main():
         ip_adapter_scale=1.0,
         det_size=640,
         seed=0,
+        enable_face_detection=False,  # Set to True to extract and align faces from the image
     )
     # anon_image.show()  # Uncomment to display the result
     anon_image.save("output.png")

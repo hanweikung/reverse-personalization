@@ -7,7 +7,8 @@ A face anonymization framework leveraging diffusion models and identity embeddin
 - [Architecture Overview](#architecture-overview)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Basic Example](#basic-example)
+  - [Basic Example - Aligned Face Input](#basic-example---aligned-face-input)
+  - [Example - Unaligned Face Input with Multiple Faces](#example---unaligned-face-input-with-multiple-faces)
   - [Advanced Configuration with Attribute Control](#advanced-configuration-with-attribute-control)
   - [Running the Example Script](#running-the-example-script)
 - [Configuration Parameters](#configuration-parameters)
@@ -102,17 +103,19 @@ The pipeline consists of four main stages:
 
 ## Usage
 
-### Basic Example
+### Basic Example - Aligned Face Input
+
+For images with a single, already aligned face (e.g., from [FFHQ](https://github.com/NVlabs/ffhq-dataset) or [CelebA-HQ](https://github.com/tkarras/progressive_growing_of_gans) datasets):
 
 ```python
-from anonymize_multiple_persons_in_image import anonymize_multiple_persons_in_image
+from anonymize_faces_in_image import anonymize_faces_in_image
 
 def main():
-    # Path to your input image
-    input_image_path = "path/to/your/image.jpg"
+    # Path to your input image (already aligned face)
+    input_image_path = "path/to/aligned_face.jpg"
     
-    # Run anonymization
-    anonymized_image = anonymize_multiple_persons_in_image(
+    # Run anonymization (enable_face_detection=False by default)
+    anonymized_image = anonymize_faces_in_image(
         input_image=input_image_path,
     )
     
@@ -126,14 +129,38 @@ if __name__ == "__main__":
     main()
 ```
 
+### Example - Unaligned Face Input with Multiple Faces
+
+For images containing unaligned faces or multiple people:
+
+```python
+from anonymize_faces_in_image import anonymize_faces_in_image
+
+def main():
+    # Path to your input image with unaligned faces
+    input_image_path = "path/to/image_with_people.jpg"
+    
+    # Run anonymization with face extraction and alignment enabled
+    anonymized_image = anonymize_faces_in_image(
+        input_image=input_image_path,
+        enable_face_detection=True,  # Enable face detection and alignment
+    )
+    
+    # Save the result
+    anonymized_image.save("output_anonymized.png")
+
+if __name__ == "__main__":
+    main()
+```
+
 ### Advanced Configuration with Attribute Control
 
 For fine-tuned control over the anonymization process:
 
 ```python
-anonymized_image = anonymize_multiple_persons_in_image(
+anonymized_image = anonymize_faces_in_image(
     input_image="input.jpg",
-    attribute_prompt="an old man"    # Control face attributes
+    attribute_prompt="an old man",   # Control face attributes
     sd_model_path="stabilityai/stable-diffusion-xl-base-1.0",
     insightface_model_path="~/.insightface",
     
@@ -146,7 +173,8 @@ anonymized_image = anonymize_multiple_persons_in_image(
     guidance_scale=-10.0,            # Negative guidance for anonymization
     
     # Face Processing
-    face_image_size=1024,            # Resolution of extracted face region
+    enable_face_detection=False,     # Enable face extraction/alignment for unaligned images
+    face_image_size=1024,            # Resolution of extracted face region (used when enable_face_detection=True)
     det_thresh=0.1,                  # Face detection confidence threshold
     det_size=640,                    # Face detection model input size
     
@@ -180,7 +208,8 @@ This will process the default image at `my_dataset/images/00080.png` and save th
 | `id_emb_scale` | float | `1.0` | Identity embedding scaling factor |
 | `guidance_scale` | float | `-10.0` | CFG scale (negative for anonymization) |
 | `num_inversion_steps` | int | `100` | Number of DDPM inversion/generation steps |
-| `face_image_size` | int | `1024` | Resolution of extracted face regions (px) |
+| `enable_face_detection` | bool | `False` | Enable face detection, extraction, and alignment for unaligned images |
+| `face_image_size` | int | `1024` | Resolution of extracted face regions (px) - only used when `enable_face_detection=True` |
 | `det_thresh` | float | `0.1` | Face detection confidence threshold (0.0-1.0) |
 | `ip_adapter_scale` | float | `1.0` | IP-Adapter conditioning strength |
 | `det_size` | int | `640` | Face detection model input size (px) |
@@ -188,6 +217,8 @@ This will process the default image at `my_dataset/images/00080.png` and save th
 
 ### Parameter Tuning Tips
 
+- **For aligned face inputs** ([FFHQ](https://github.com/NVlabs/ffhq-dataset), [CelebA-HQ](https://github.com/tkarras/progressive_growing_of_gans)): Keep `enable_face_detection=False` (default)
+- **For unaligned or multi-face images**: Set `enable_face_detection=True`
 - **For stronger anonymization**: Decrease `guidance_scale` (more negative)
 
 ## Project Structure
@@ -195,7 +226,7 @@ This will process the default image at `my_dataset/images/00080.png` and save th
 ```
 reverse-personalization/
 │
-├── anonymize_multiple_persons_in_image.py   # Main anonymization function
+├── anonymize_faces_in_image.py              # Main anonymization function
 ├── main.py                                  # Example usage script
 ├── environment.yml                          # Conda environment specification
 ├── LICENSE                                  # GNU AGPL v3 license
