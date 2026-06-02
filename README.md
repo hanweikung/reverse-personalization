@@ -2,6 +2,68 @@
 
 A face anonymization framework leveraging diffusion models and identity embeddings to regenerate faces with different identities while preserving pose, expression, gaze, and the original image context.
 
+<table>
+  <thead>
+    <tr>
+      <th align="center">Input</th>
+      <th align="center">LDFA</th>
+      <th align="center">RiDDLE</th>
+      <th align="center">Textual Inv.</th>
+      <th align="center" colspan="3"><strong>Ours</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><img src="assets/images/teaser/37594-orig.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-ldfa.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-riddle.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-textual.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-skip-0_7-id-1_0-cfg--5_00-ip-1_00.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-skip-0_7-id-1_0-cfg--5_00-ip-1_00-old-aging-grandpa-wrinkles.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-skip-0_7-id-1_0-cfg--5_00-ip-1_00-chinese-korean-japanese-asian.jpg" width="110"></td>
+    </tr>
+    <tr>
+      <td><img src="assets/images/teaser/06496-orig.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-ldfa.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-riddle.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-textual.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-skip-0_7-id-1_0-cfg--10_00-ip-1_00.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-skip-0_7-id-1_0-cfg--5_00-ip-1_00-grandma.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-skip-0_7-id-1_0-cfg--7_50-ip-1_00-young-chinese-korean-japanese-asian.jpg" width="110"></td>
+    </tr>
+    <tr>
+      <td align="left"><sub>Identity anonymized</sub></td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+      <td align="center" colspan="3">✅</td>
+    </tr>
+    <tr>
+      <td align="left"><sub>Subject agnostic</sub></td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+      <td align="center">❌</td>
+      <td align="center" colspan="3">✅</td>
+    </tr>
+    <tr>
+      <td align="left"><sub>Attr &amp; scene preserved</sub></td>
+      <td align="center">❌ Poor</td>
+      <td align="center">❌ Poor</td>
+      <td align="center">✅ Good</td>
+      <td align="center" colspan="3">✅ Good</td>
+    </tr>
+    <tr>
+      <td align="left"><sub>Attribute controllable</sub></td>
+      <td align="center">❌</td>
+      <td align="center">❌</td>
+      <td align="center">❌</td>
+      <td align="center">✅ Default</td>
+      <td align="center">✅ Aging</td>
+      <td align="center">✅ Ethnicity</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
