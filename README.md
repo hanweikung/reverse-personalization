@@ -1,6 +1,12 @@
-# Reverse Personalization (WACV 2026)
+<div align="center">
 
-A face anonymization framework leveraging diffusion models and identity embeddings to regenerate faces with different identities while preserving pose, expression, gaze, and the original image context.
+<h1>Reverse Personalization</h1>
+
+[Han-Wei Kung](https://hanweikung.github.io/)<sup>1</sup> · [Tuomas Varanka](https://scholar.google.com/citations?user=5QWyHT4AAAAJ&hl=en)<sup>2</sup> · [Nicu Sebe](https://scholar.google.com/citations?user=stFCYOAAAAAJ&hl=en)<sup>1</sup>
+
+<sup>1</sup> University of Trento, Italy | <sup>2</sup> University of Oulu, Finland
+
+[![arXiv](https://img.shields.io/badge/arXiv-2512.22984-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2512.22984) [![Project Page](https://img.shields.io/badge/Project-Page-blue?logo=firefox&logoColor=white)](https://hanweikung.github.io/reverse-personalization/) [![WACV 2026](https://img.shields.io/badge/WACV%202026-Poster-gold)](https://wacv.thecvf.com/Conferences/2026)
 
 <table>
   <thead>
@@ -63,6 +69,10 @@ A face anonymization framework leveraging diffusion models and identity embeddin
     </tr>
   </tbody>
 </table>
+
+</div>
+
+Our reverse personalization method anonymizes faces without subject fine-tuning, while preserving the original facial attributes and surrounding scene. It also supports intuitive control over which attributes are retained or modified.
 
 ## Table of Contents
 
