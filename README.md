@@ -86,6 +86,7 @@ Our reverse personalization method anonymizes faces without subject fine-tuning,
 - [Configuration Parameters](#configuration-parameters)
 - [Project Structure](#project-structure)
 - [How It Works](#how-it-works)
+- [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 
 ## Architecture Overview
@@ -352,6 +353,19 @@ Using the inverted latents and a modified identity embedding:
 The anonymized face is composited back into the original image:
 - The inverse affine transformation warps the face to the original position
 - This process repeats for each detected face
+
+## Citation
+
+```bibtex
+@InProceedings{Kung_2026_WACV,
+    author    = {Kung, Han-Wei and Varanka, Tuomas and Sebe, Nicu},
+    title     = {Reverse Personalization},
+    booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+    month     = {March},
+    year      = {2026},
+    pages     = {988-999}
+}
+```
 
 ## Acknowledgments
 
