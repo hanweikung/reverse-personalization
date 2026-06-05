@@ -317,8 +317,12 @@ reverse-personalization/
 │   ├── merger.py                            # Face composition utilities
 │   └── sample_vector.py                     # Vector sampling helpers
 │
-└── my_dataset/                              # Sample dataset directory
-    └── images/                              # Input images
+├── my_dataset/                              # Sample dataset directory
+│   └── images/                              # Input images
+│
+└── assets/
+    └── images/
+        └── teaser/                          # Teaser images for README
 ```
 
 ## How It Works
