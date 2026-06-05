@@ -20,7 +20,7 @@
   </thead>
   <tbody>
     <tr>
-      <td><img src="assets/images/teaser/37594-orig.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/37594-orig.jpg" width="110" height="110"></td>
       <td><img src="assets/images/teaser/37594-ldfa.jpg" width="110"></td>
       <td><img src="assets/images/teaser/37594-riddle.jpg" width="110"></td>
       <td><img src="assets/images/teaser/37594-textual.jpg" width="110"></td>
@@ -29,7 +29,7 @@
       <td><img src="assets/images/teaser/37594-skip-0_7-id-1_0-cfg--5_00-ip-1_00-chinese-korean-japanese-asian.jpg" width="110"></td>
     </tr>
     <tr>
-      <td><img src="assets/images/teaser/06496-orig.jpg" width="110"></td>
+      <td><img src="assets/images/teaser/06496-orig.jpg" width="110" height="110"></td>
       <td><img src="assets/images/teaser/06496-ldfa.jpg" width="110"></td>
       <td><img src="assets/images/teaser/06496-riddle.jpg" width="110"></td>
       <td><img src="assets/images/teaser/06496-textual.jpg" width="110"></td>
@@ -38,7 +38,7 @@
       <td><img src="assets/images/teaser/06496-skip-0_7-id-1_0-cfg--7_50-ip-1_00-young-chinese-korean-japanese-asian.jpg" width="110"></td>
     </tr>
     <tr>
-      <td align="left"><sub>Identity anonymized</sub></td>
+      <td align="left"><sub>ID anonymized</sub></td>
       <td align="center">✅</td>
       <td align="center">✅</td>
       <td align="center">✅</td>
@@ -52,14 +52,14 @@
       <td align="center" colspan="3">✅</td>
     </tr>
     <tr>
-      <td align="left"><sub>Attr &amp; scene preserved</sub></td>
+      <td align="left"><sub>Attr &amp; scene kept</sub></td>
       <td align="center">❌ Poor</td>
       <td align="center">❌ Poor</td>
       <td align="center">✅ Good</td>
       <td align="center" colspan="3">✅ Good</td>
     </tr>
     <tr>
-      <td align="left"><sub>Attribute controllable</sub></td>
+      <td align="left"><sub>Attr controllable</sub></td>
       <td align="center">❌</td>
       <td align="center">❌</td>
       <td align="center">❌</td>
