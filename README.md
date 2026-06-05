@@ -374,4 +374,5 @@ The anonymized face is composited back into the original image:
 - IP-Adapter-FaceID: [Tencent AI Lab](https://github.com/tencent-ailab/IP-Adapter)
 - ArcFace: [InsightFace](https://github.com/deepinsight/insightface)
 - LEDITS++: [AIML Lab, TU Darmstadt](https://github.com/ml-research/ledits_pp)
+- DDPM_inversion: [Inbar Huberman-Spiegelglas et al.](https://github.com/inbarhub/DDPM_inversion)
 - face-alignment: [Adrian Bulat et al.](https://github.com/1adrianb/face-alignment)
